@@ -18,6 +18,11 @@ for (task, metric), floor in FLOOR.items():
 for corpus, row in r["word"].items():
     if "hunspell" in row and row["ssc"]["top1"] < row["hunspell"]["top1"]:
         errors.append(f"{corpus}: top1 {row['ssc']['top1']} below hunspell {row['hunspell']['top1']}")
+if "grammar" in r:
+    if r["grammar"]["exact_fix"] < 80.0:
+        errors.append(f"grammar exact_fix {r['grammar']['exact_fix']} < 80")
+    if r["grammar"]["clean_with_false_alarm"] > 0:
+        errors.append(f"grammar: {r['grammar']['clean_with_false_alarm']} clean sentences flagged")
 noise = r["noise"]["ssc"]["flags_per_1000_words"]
 if noise > MAX_NOISE:
     errors.append(f"noise {noise} > {MAX_NOISE}")

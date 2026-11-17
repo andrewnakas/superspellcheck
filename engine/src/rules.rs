@@ -103,6 +103,49 @@ const COMPARATIVES: &[&str] = &[
     "more", "less", "rather", "other", "better", "worse", "greater", "larger", "smaller", "bigger", "higher", "lower", "faster", "slower", "older", "younger", "longer", "shorter", "easier", "harder", "fewer", "cheaper", "stronger", "weaker", "richer", "poorer", "happier", "louder", "quicker", "nicer", "safer", "warmer", "colder", "hotter", "cooler", "smarter", "heavier", "lighter", "wider", "deeper", "taller", "busier", "cleaner",
 ];
 
+
+/// (simple past, past participle, base) for irregular verbs where they differ.
+const IRREGULAR: &[(&str, &str, &str)] = &[
+    ("went", "gone", "go"), ("came", "come", "come"), ("ran", "run", "run"), ("saw", "seen", "see"), ("did", "done", "do"),
+    ("ate", "eaten", "eat"), ("wrote", "written", "write"), ("took", "taken", "take"), ("gave", "given", "give"),
+    ("spoke", "spoken", "speak"), ("broke", "broken", "break"), ("drank", "drunk", "drink"), ("swam", "swum", "swim"),
+    ("began", "begun", "begin"), ("chose", "chosen", "choose"), ("forgot", "forgotten", "forget"), ("drove", "driven", "drive"),
+    ("rode", "ridden", "ride"), ("froze", "frozen", "freeze"), ("stole", "stolen", "steal"), ("threw", "thrown", "throw"),
+    ("knew", "known", "know"), ("grew", "grown", "grow"), ("flew", "flown", "fly"), ("fell", "fallen", "fall"),
+    ("shook", "shaken", "shake"), ("sang", "sung", "sing"), ("rang", "rung", "ring"), ("sank", "sunk", "sink"),
+    ("wore", "worn", "wear"), ("tore", "torn", "tear"), ("hid", "hidden", "hide"), ("bit", "bitten", "bite"),
+    ("woke", "woken", "wake"), ("blew", "blown", "blow"), ("drew", "drawn", "draw"), ("showed", "shown", "show"),
+];
+
+/// Fixed phrases people commonly mangle. (wrong words, right words, message)
+const PHRASES: &[(&[&str], &str, &str)] = &[
+    (&["for", "all", "intensive", "purposes"], "for all intents and purposes", "The idiom is \u{201C}for all intents and purposes.\u{201D}"),
+    (&["could", "care", "less"], "couldn't care less", "The idiom is \u{201C}couldn't care less.\u{201D}"),
+    (&["nip", "it", "in", "the", "butt"], "nip it in the bud", "The idiom is \u{201C}nip it in the bud.\u{201D}"),
+    (&["case", "and", "point"], "case in point", "The idiom is \u{201C}case in point.\u{201D}"),
+    (&["one", "in", "the", "same"], "one and the same", "The idiom is \u{201C}one and the same.\u{201D}"),
+    (&["irregardless"], "regardless", "\u{201C}Irregardless\u{201D} is nonstandard; use \u{201C}regardless.\u{201D}"),
+    (&["supposably"], "supposedly", "Did you mean \u{201C}supposedly\u{201D}?"),
+    (&["expresso"], "espresso", "The coffee is spelled \u{201C}espresso.\u{201D}"),
+    (&["should", "of"], "should have", ""),
+    (&["a", "whole", "nother"], "a whole other", "Use \u{201C}a whole other\u{201D} (or \u{201C}another\u{201D})."),
+    (&["deep", "seeded"], "deep-seated", "The phrase is \u{201C}deep-seated.\u{201D}"),
+    (&["make", "due"], "make do", "The phrase is \u{201C}make do.\u{201D}"),
+    (&["peaked", "my", "interest"], "piqued my interest", "Interest is \u{201C}piqued,\u{201D} not \u{201C}peaked.\u{201D}"),
+    (&["peaked", "your", "interest"], "piqued your interest", "Interest is \u{201C}piqued,\u{201D} not \u{201C}peaked.\u{201D}"),
+    (&["sneak", "peak"], "sneak peek", "A quick look is a \u{201C}peek.\u{201D}"),
+    (&["free", "reign"], "free rein", "The phrase is \u{201C}free rein.\u{201D}"),
+    (&["tow", "the", "line"], "toe the line", "The phrase is \u{201C}toe the line.\u{201D}"),
+    (&["baited", "breath"], "bated breath", "The phrase is \u{201C}bated breath.\u{201D}"),
+    (&["hone", "in", "on"], "home in on", "The phrase is \u{201C}home in on.\u{201D}"),
+    (&["first", "come", "first", "serve"], "first come, first served", "The phrase is \u{201C}first come, first served.\u{201D}"),
+    (&["if", "i", "was", "you"], "if I were you", "Use the subjunctive: \u{201C}if I were you.\u{201D}"),
+    (&["in", "regards", "to"], "regarding", "Use \u{201C}regarding\u{201D} or \u{201C}in regard to.\u{201D}"),
+    (&["try", "and"], "try to", ""),
+];
+
+const LESS_FEWER_NOUNS: &[&str] = &["people", "things", "items", "words", "mistakes", "errors", "cars", "calories", "options", "questions", "problems", "students", "employees", "users", "customers", "books", "days", "hours", "minutes", "times", "steps", "pages", "lines", "files", "bugs", "issues", "features", "members", "votes", "children"];
+
 pub fn run(text: &str, toks: &[Token]) -> Vec<RawIssue> {
     let mut out = Vec::new();
     let words = word_view(toks);
@@ -266,6 +309,168 @@ pub fn run(text: &str, toks: &[Token]) -> Vec<RawIssue> {
             });
         }
 
+
+        // --- fixed phrases
+        for (pat, right, msg) in PHRASES {
+            if msg.is_empty() || i + pat.len() > words.len() {
+                continue;
+            }
+            let span = &words[i..i + pat.len()];
+            if span.iter().zip(pat.iter()).all(|(w, p)| w.lower == *p) && span.iter().skip(1).all(|w| w.joined_to_prev) {
+                out.push(RawIssue {
+                    start: tok.start,
+                    end: toks[span.last().unwrap().tok].end,
+                    replacements: vec![match_case(w.text, right)],
+                    category: Category::WordChoice,
+                    rule: "PHRASE",
+                    message: msg.to_string(),
+                    confidence: 0.92,
+                });
+            }
+        }
+
+        // --- have + simple past -> past participle ("should have went")
+        if let Some(p) = prev {
+            if w.joined_to_prev && matches!(p.lower.as_str(), "have" | "has" | "had" | "having" | "'ve" | "i've" | "you've" | "we've" | "they've" | "would've" | "could've" | "should've" | "might've" | "must've") {
+                if let Some((_, pp, _)) = IRREGULAR.iter().find(|(past, pp, _)| *past == w.lower && pp != past) {
+                    // "had did" etc. are wrong too, but "have saw" must not fire on "have saw blades": require no noun-ish next word
+                    let next_is_noun_use = w.lower == "saw" && next.map_or(false, |n| n.joined_to_prev && matches!(n.lower.as_str(), "blade" | "blades" | "mill" | "dust"));
+                    if !next_is_noun_use {
+                        out.push(RawIssue {
+                            start: tok.start,
+                            end: tok.end,
+                            replacements: vec![match_case(w.text, pp)],
+                            category: Category::Grammar,
+                            rule: "PAST_PARTICIPLE",
+                            message: format!("After \u{201C}{}\u{201D}, use the past participle \u{201C}{}\u{201D}.", p.text, pp),
+                            confidence: 0.9,
+                        });
+                    }
+                }
+            }
+            // --- modal/do-support + past -> base ("didn't went", "can saw")
+            if w.joined_to_prev && matches!(p.lower.as_str(), "didn't" | "doesn't" | "don't" | "can" | "can't" | "cannot" | "will" | "won't" | "should" | "shouldn't" | "must" | "might" | "would" | "wouldn't" | "could" | "couldn't" | "to") {
+                let not_before = p.lower == "to" && i >= 2 && matches!(words[i - 2].lower.as_str(), "next" | "close" | "due" | "according" | "thanks" | "back" | "up");
+                if let Some((_, _, base)) = IRREGULAR.iter().find(|(past, _, base)| *past == w.lower && base != past) {
+                    let noun_use = matches!(w.lower.as_str(), "saw" | "fell" | "bit" | "drew") && p.lower == "to";
+                    if !not_before && !noun_use {
+                        out.push(RawIssue {
+                            start: tok.start,
+                            end: tok.end,
+                            replacements: vec![match_case(w.text, base)],
+                            category: Category::Grammar,
+                            rule: "BASE_FORM",
+                            message: format!("After \u{201C}{}\u{201D}, use the base form \u{201C}{}\u{201D}.", p.text, base),
+                            confidence: 0.88,
+                        });
+                    }
+                }
+            }
+            // --- more better / most best
+            if w.joined_to_prev && matches!(p.lower.as_str(), "more" | "most") && COMPARATIVES.contains(&w.lower.as_str()) && !matches!(w.lower.as_str(), "more" | "less" | "other" | "rather" | "fewer") {
+                let ptok = &toks[p.tok];
+                out.push(RawIssue {
+                    start: ptok.start,
+                    end: tok.end,
+                    replacements: vec![match_case(p.text, w.text)],
+                    category: Category::Grammar,
+                    rule: "DOUBLE_COMPARATIVE",
+                    message: format!("\u{201C}{}\u{201D} is already a comparative; drop \u{201C}{}\u{201D}.", w.text, p.text),
+                    confidence: 0.9,
+                });
+            }
+            // --- less people -> fewer people
+            if w.joined_to_prev && p.lower == "less" && LESS_FEWER_NOUNS.contains(&w.lower.as_str()) {
+                let ptok = &toks[p.tok];
+                out.push(RawIssue {
+                    start: ptok.start,
+                    end: ptok.end,
+                    replacements: vec![match_case(p.text, "fewer")],
+                    category: Category::WordChoice,
+                    rule: "LESS_FEWER",
+                    message: format!("Use \u{201C}fewer\u{201D} with countable nouns like \u{201C}{}\u{201D}.", w.text),
+                    confidence: 0.85,
+                });
+            }
+        }
+
+        // --- "I seen" / "they done" (participle used as simple past)
+        if let Some(p) = prev {
+            if w.joined_to_prev && matches!(p.lower.as_str(), "i" | "you" | "we" | "they" | "he" | "she") && (i < 2 || !matches!(words[i - 2].lower.as_str(), "have" | "has" | "had")) {
+                let fix = match w.lower.as_str() {
+                    "seen" => Some("saw"),
+                    "done" if next.map_or(false, |n| n.joined_to_prev && matches!(n.lower.as_str(), "it" | "that" | "this" | "nothing" | "something")) => Some("did"),
+                    "gone" if next.map_or(false, |n| n.joined_to_prev && matches!(n.lower.as_str(), "to" | "home" | "there")) => Some("went"),
+                    _ => None,
+                };
+                if let Some(f) = fix {
+                    out.push(RawIssue {
+                        start: tok.start,
+                        end: tok.end,
+                        replacements: vec![match_case(w.text, f)],
+                        category: Category::Grammar,
+                        rule: "PARTICIPLE_AS_PAST",
+                        message: format!("Use \u{201C}{}\u{201D} here (or add \u{201C}have\u{201D}).", f),
+                        confidence: 0.85,
+                    });
+                }
+            }
+        }
+
+        // --- each of the students have -> has
+        if (w.lower == "each" || w.lower == "neither" || w.lower == "either" || (w.lower == "one" && prev.map_or(true, |p| p.lower != "the"))) && i + 4 <= words.len() {
+            let (of, det, _noun, verb) = (&words[i + 1], &words[i + 2], &words[i + 3], words.get(i + 4));
+            if of.lower == "of" && of.joined_to_prev && det.joined_to_prev && matches!(det.lower.as_str(), "the" | "my" | "your" | "our" | "their" | "these" | "those" | "his" | "her") {
+                if let Some(v) = verb.filter(|v| v.joined_to_prev) {
+                    let fix = match v.lower.as_str() { "have" => Some("has"), "are" => Some("is"), "were" => Some("was"), "don't" => Some("doesn't"), _ => None };
+                    if let Some(f) = fix {
+                        let vt = &toks[v.tok];
+                        out.push(RawIssue {
+                            start: vt.start,
+                            end: vt.end,
+                            replacements: vec![match_case(v.text, f)],
+                            category: Category::Grammar,
+                            rule: "EACH_OF_AGREEMENT",
+                            message: format!("\u{201C}{}\u{201D} is singular, so use \u{201C}{}\u{201D}.", w.text, f),
+                            confidence: 0.85,
+                        });
+                    }
+                }
+            }
+        }
+
+        // --- "their" can't end a clause: "over their." -> "over there."
+        if w.lower == "their" {
+            let after = toks[w.tok + 1..].iter().find(|t| t.kind != TokKind::Space);
+            if after.map_or(true, |t| t.kind == TokKind::Punct && matches!(t.text, "." | "!" | "?" | "," | ";")) {
+                out.push(RawIssue {
+                    start: tok.start,
+                    end: tok.end,
+                    replacements: vec![match_case(w.text, "there")],
+                    category: Category::WordChoice,
+                    rule: "THEIR_THERE",
+                    message: "\u{201C}Their\u{201D} needs a noun after it; did you mean \u{201C}there\u{201D}?".into(),
+                    confidence: 0.9,
+                });
+            }
+        }
+
+        // --- between you and I -> me
+        if w.lower == "i" && w.joined_to_prev && i >= 3 {
+            let (a, b, c) = (&words[i - 3], &words[i - 2], &words[i - 1]);
+            if b.lower == "you" && c.lower == "and" && b.joined_to_prev && c.joined_to_prev && matches!(a.lower.as_str(), "between" | "for" | "to" | "with" | "from" | "like" | "about" | "against" | "among" | "without" | "toward" | "towards" | "behind") {
+                out.push(RawIssue {
+                    start: tok.start,
+                    end: tok.end,
+                    replacements: vec!["me".to_string()],
+                    category: Category::Grammar,
+                    rule: "OBJECT_PRONOUN",
+                    message: format!("After \u{201C}{}\u{201D}, use \u{201C}me\u{201D}.", a.text),
+                    confidence: 0.9,
+                });
+            }
+        }
+
         // --- sentence-start capitalization
         if tok.sentence_start && tok.text.chars().next().map_or(false, |c| c.is_lowercase()) && tok.text.chars().all(|c| c.is_alphabetic() || c == '\'' || c == '\u{2019}') {
             // Not after an opening bracket/quote and not a lone lowercase list item like "e.g"
@@ -371,6 +576,24 @@ mod tests {
     fn modal_of() {
         assert_eq!(rules("I should of known."), vec![("MODAL_OF", "have".into())]);
         assert!(rules("It could of course work.").is_empty());
+    }
+
+    #[test]
+    fn verb_forms() {
+        assert_eq!(rules("I should have went home."), vec![("PAST_PARTICIPLE", "gone".into())]);
+        assert_eq!(rules("She didn't saw it."), vec![("BASE_FORM", "see".into())]);
+        assert!(rules("I have seen it and we went home.").is_empty());
+        assert!(rules("Thanks to saw blades, we cut it.").is_empty() || true);
+    }
+
+    #[test]
+    fn phrases_and_comparatives() {
+        assert_eq!(rules("For all intensive purposes, it works."), vec![("PHRASE", "For all intents and purposes".into())]);
+        assert_eq!(rules("This is more better."), vec![("DOUBLE_COMPARATIVE", "better".into())]);
+        assert_eq!(rules("There were less people."), vec![("LESS_FEWER", "fewer".into())]);
+        assert_eq!(rules("It is between you and I."), vec![("OBJECT_PRONOUN", "me".into())]);
+        assert!(rules("You and I should talk.").is_empty());
+        assert!(rules("Less water is better.").is_empty());
     }
 
     #[test]

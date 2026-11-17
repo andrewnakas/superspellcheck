@@ -147,9 +147,11 @@ impl Engine {
     }
 
     /// LM score of a (possibly multi-word) replacement in context.
+    /// Contractions are scored by their expansion ("it's" -> "it is"): the n-gram data has no real counts for them.
     fn seq_score(&self, seq: &[&str], ctx: Ctx) -> f64 {
         let (pid, nid) = self.ctx_ids(ctx);
-        let ids: Vec<Option<u32>> = seq.iter().map(|w| self.lm.id(w)).collect();
+        let expanded: Vec<String> = seq.iter().flat_map(|w| expand_contraction(w)).collect();
+        let ids: Vec<Option<u32>> = expanded.iter().map(|w| self.lm.id(w)).collect();
         let mut s = if ctx.prev.is_some() { self.lm.ln_cond(pid, ids[0]) } else { self.lm.ln_unigram(ids[0]) };
         for k in 1..ids.len() {
             s += self.lm.ln_cond(ids[k - 1], ids[k]);
@@ -389,7 +391,8 @@ impl Engine {
             for alt in alts {
                 let seq: Vec<&str> = alt.split(' ').collect();
                 // Need positive evidence: the alternative must be attested next to a neighbour.
-                let ids: Vec<Option<u32>> = seq.iter().map(|w| self.lm.id(w)).collect();
+                let expanded: Vec<String> = seq.iter().flat_map(|w| expand_contraction(w)).collect();
+                let ids: Vec<Option<u32>> = expanded.iter().map(|w| self.lm.id(w)).collect();
                 if ids.iter().any(|i| i.is_none()) {
                     continue;
                 }
@@ -400,7 +403,12 @@ impl Engine {
                     continue;
                 }
                 let one_sided = ctx.prev.is_none() || ctx.next.is_none();
-                let gain = self.seq_score(&seq, ctx) - orig - confusion::switch_penalty(&lower, alt) - if one_sided { 2.0 } else { 0.0 };
+                // An expansion ("they're" -> "they are") brings a free, strongly associated bigram; charge for it.
+                let extra_tokens = expanded.len() as f64 - expand_contraction(&lower).len() as f64;
+                let gain = self.seq_score(&seq, ctx) - orig - confusion::switch_penalty(&lower, alt) - if one_sided { 2.0 } else { 0.0 } - 2.5 * extra_tokens.max(0.0);
+                if std::env::var_os("SSC_DEBUG").is_some() {
+                    eprintln!("confusion {} -> {}: gain {:.2}", lower, alt, gain);
+                }
                 if gain > 0.0 && best.map_or(true, |b| gain > b.1) {
                     best = Some((alt, gain));
                 }
@@ -420,6 +428,30 @@ impl Engine {
             }
         }
     }
+}
+
+/// "don't" -> ["do", "not"], "it's" -> ["it", "is"]; other words unchanged.
+pub fn expand_contraction(w: &str) -> Vec<String> {
+    let w = normalize_apostrophes(&w.to_lowercase());
+    let special = match w.as_str() {
+        "can't" | "cannot" => Some(vec!["can", "not"]),
+        "won't" => Some(vec!["will", "not"]),
+        "shan't" => Some(vec!["shall", "not"]),
+        "ain't" => Some(vec!["is", "not"]),
+        "let's" => Some(vec!["let", "us"]),
+        _ => None,
+    };
+    if let Some(v) = special {
+        return v.into_iter().map(String::from).collect();
+    }
+    for (suf, exp) in [("n't", "not"), ("'re", "are"), ("'m", "am"), ("'ve", "have"), ("'ll", "will"), ("'d", "would"), ("'s", "is")] {
+        if let Some(base) = w.strip_suffix(suf) {
+            if !base.is_empty() && !base.contains('\'') {
+                return vec![base.to_string(), exp.to_string()];
+            }
+        }
+    }
+    vec![w]
 }
 
 fn softmax(scores: &[f64]) -> Vec<f64> {

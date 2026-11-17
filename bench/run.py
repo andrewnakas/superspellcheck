@@ -273,11 +273,16 @@ def task_noise(quick):
     return res
 
 
+def task_grammar(quick):
+    import grammar
+    return grammar.main()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--json")
-    ap.add_argument("--tasks", default="word,context,realword,noise")
+    ap.add_argument("--tasks", default="word,context,realword,noise,grammar")
     a = ap.parse_args()
     if not os.path.exists(SSC):
         sys.exit(f"missing {SSC}; run: cargo build --release")

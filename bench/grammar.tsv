@@ -1,0 +1,87 @@
+# input<TAB>expected (identical expected = clean sentence that must not be flagged)
+I recieve the package yesterday.	I receive the package yesterday.
+He don't like coffee.	He doesn't like coffee.
+She have a new car.	She has a new car.
+They was at the park.	They were at the park.
+We is going home.	We are going home.
+I should of called you.	I should have called you.
+You could of told me.	You could have told me.
+I would have went with you.	I would have gone with you.
+She has came back.	She has come back.
+They didn't saw the sign.	They didn't see the sign.
+He can't went today.	He can't go today.
+I ate a apple.	I ate an apple.
+It was an big mistake.	It was a big mistake.
+This is a honest answer.	This is an honest answer.
+She is an university student.	She is a university student.
+Please send me the the file.	Please send me the file.
+This is better then the last one.	This is better than the last one.
+He is taller then his brother.	He is taller than his brother.
+Your welcome to join us.	You're welcome to join us.
+Its a beautiful day.	It's a beautiful day.
+The company changed it's policy.	The company changed its policy.
+The dog wagged it's own tail.	The dog wagged its own tail.
+I got a letter form the bank.	I got a letter from the bank.
+Don't loose your keys.	Don't lose your keys.
+I need you're help.	I need your help.
+Their going to be late.	They're going to be late.
+I put it over their.	I put it over there.
+This is more easier than I thought.	This is easier than I thought.
+There were less people than expected.	There were fewer people than expected.
+Keep this between you and I.	Keep this between you and me.
+For all intensive purposes, we are done.	For all intents and purposes, we are done.
+I could care less about that.	I couldn't care less about that.
+Here is a sneak peak of the design.	Here is a sneak peek of the design.
+Irregardless of the cost, we will go.	Regardless of the cost, we will go.
+i think we should leave.	I think we should leave.
+we met in paris last summer.	We met in Paris last summer.
+The meeting is on monday.	The meeting is on Monday.
+Hello , how are you?	Hello, how are you?
+Thanks,see you soon.	Thanks, see you soon.
+It was definately the best option.	It was definitely the best option.
+We need to seperate the files.	We need to separate the files.
+The weather was wierd today.	The weather was weird today.
+I will be their at noon.	I will be there at noon.
+He walked passed the store.	He walked past the store.
+The affect of the change was huge.	The effect of the change was huge.
+Can you give me some advise?	Can you give me some advice?
+I need to by milk.	I need to buy milk.
+She excepted the offer.	She accepted the offer.
+It is to late to call.	It is too late to call.
+I am going to the store to.	I am going to the store too.
+Me and him went to the game.	He and I went to the game.
+Each of the students have a book.	Each of the students has a book.
+The list of items are on the desk.	The list of items is on the desk.
+If I was you, I would wait.	If I were you, I would wait.
+Who's book is this?	Whose book is this?
+I seen him yesterday.	I saw him yesterday.
+We was going to call you.	We were going to call you.
+Alot of people came.	A lot of people came.
+I dont know what to do.	I don't know what to do.
+She said she would of come.	She said she would have come.
+The results were very good.	The results were very good.
+I would have gone if I had known.	I would have gone if I had known.
+Their house is bigger than ours.	Their house is bigger than ours.
+It's going to rain, so bring an umbrella.	It's going to rain, so bring an umbrella.
+The team lost its best player.	The team lost its best player.
+You're going to love this.	You're going to love this.
+We bought fewer apples this week.	We bought fewer apples this week.
+Less water is needed in winter.	Less water is needed in winter.
+He works at an NGO in Kenya.	He works at an NGO in Kenya.
+She ran the 100m in 12 seconds.	She ran the 100m in 12 seconds.
+Check https://example.com/docs for details.	Check https://example.com/docs for details.
+Email me at jane.doe@example.com tomorrow.	Email me at jane.doe@example.com tomorrow.
+Call getUserName() before saving.	Call getUserName() before saving.
+Thanks @maria for the review!	Thanks @maria for the review!
+The colour of the sky was grey.	The colour of the sky was grey.
+I met Siobhan and Nguyen at the café.	I met Siobhan and Nguyen at the café.
+That that is, is.	That that is, is.
+We had had enough by then.	We had had enough by then.
+He said, "it's fine."	He said, "it's fine."
+Then we left the room.	Then we left the room.
+I know you and I disagree.	I know you and I disagree.
+She saw the saw on the table.	She saw the saw on the table.
+The data is stored in a database.	The data is stored in a database.
+An hour later, we arrived.	An hour later, we arrived.
+It was a one-time offer.	It was a one-time offer.
+A European company bought it.	A European company bought it.

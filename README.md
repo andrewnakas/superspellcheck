@@ -48,11 +48,13 @@ Results from `bench/run.py --quick`. Top-1 means the first suggestion is the cor
 
 | Task | SuperSpellCheck | Hunspell (Chrome) | Aspell |
 |---|---|---|---|
-| Typos in real sentences, top-1 fix | **72.2%** | 29.7% | 31.3% |
-| Wikipedia misspellings, top-1 | **82.3%** | 75.3% | 80.7% |
-| Birkbeck `missp`, top-1 | **40.4%** | 30.2% | 37.5% |
-| Holbrook (children's writing), top-1 | **29.1%** | 15.4% | 23.0% |
+| Typos in real sentences, top-1 fix | **71.5%** | 29.7% | 31.3% |
+| Wikipedia misspellings, top-1 | **82.0%** | 75.3% | 80.7% |
+| Birkbeck `missp`, top-1 | **40.2%** | 30.2% | 37.5% |
+| Holbrook (children's writing), top-1 | **29.7%** | 15.4% | 23.0% |
 | Real-word errors caught ("form" → "from") | **76%** | 0% | 0% |
-| False alarms per 1,000 words of clean prose | **7.8** | 12.9 | 16.7 |
+| Real-word false alarms per 100 clean sentences | **0.3** | n/a | n/a |
+| Grammar test set (`bench/grammar.tsv`), exact fix | **86.7%** | 0% | 0% |
+| False alarms per 1,000 words of clean prose | **7.6** | 12.9 | 16.7 |
 
 CI runs the quick benchmark on every push. `bench/check_regression.py` fails the build if accuracy drops below the recorded floors or falls behind Hunspell.
