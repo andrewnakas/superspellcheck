@@ -175,8 +175,8 @@ try {
       const host = `http://127.0.0.1:${mirror.address().port}/`;
       await sw.evaluate(async (host) => {
         const s = (await chrome.storage.sync.get('settings')).settings ?? {};
-        await chrome.storage.sync.set({ settings: { ...s, aiCheck: true, aiHost: host, minConfidence: 0.5 } });
-      }, host);
+        await chrome.storage.sync.set({ settings: { ...s, aiCheck: true, aiHost: host.host, ...(host.model ? { aiModel: host.model } : {}), minConfidence: 0.5 } });
+      }, { host, model: process.env.SSC_AI_MODEL });
       // Wait for the model to download and load (CPU/WASM in headless Chromium).
       // Messages must come from an extension page: a service worker can't message itself.
       const extId = new URL(sw.url()).host;

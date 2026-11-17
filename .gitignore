@@ -6,3 +6,6 @@ bench/data/
 bench/results/*.tmp
 extension/pkg/
 *.log
+train/data/
+train/cache/
+train/out/
