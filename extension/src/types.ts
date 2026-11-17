@@ -38,6 +38,9 @@ export type Request =
   | { type: 'check'; text: string }
   | { type: 'deepCheck'; text: string }
   | { type: 'addWord'; word: string }
+  | { type: 'ignore'; key: string }
+  | { type: 'accepted'; rule: string }
+  | { type: 'rewrite'; text: string; goal: 'clearer' | 'shorter' | 'formal' | 'friendly' }
   | { type: 'removeWord'; word: string }
   | { type: 'getSettings' }
   | { type: 'ping' };

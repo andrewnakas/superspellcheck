@@ -134,6 +134,29 @@ try {
     assert.equal(u.length, 0);
   });
 
+  await step('ignoring the same flag twice suppresses it permanently', async () => {
+    const ignoreOnce = async () => {
+      await page.fill('#ta', '');
+      await page.click('#ta');
+      await page.keyboard.type('We met the frobnicatr there.');
+      await page.waitForTimeout(700);
+      await page.evaluate(() => { const ta = document.getElementById('ta'); ta.setSelectionRange(13, 13); });
+      await page.keyboard.press('Alt+Enter');
+      await page.locator('ssc-overlay .card .act', { hasText: 'Ignore' }).click();
+    };
+    await ignoreOnce();
+    await page.reload();
+    await ignoreOnce();
+    await page.reload();
+    await page.click('#ta');
+    await page.keyboard.type('We met the frobnicatr there.');
+    await page.waitForTimeout(1200);
+    const stored = await sw.evaluate(async () => (await chrome.storage.local.get('suppressed')).suppressed);
+    assert.ok(stored.some((k) => k.endsWith('|frobnicatr')), JSON.stringify(stored));
+    const taBox = await page.locator('#ta').boundingBox();
+    assert.equal((await underlines()).filter((r) => r.top >= taBox.y && r.top <= taBox.y + taBox.height).length, 0);
+  });
+
   await step('Pro deep check merges AI findings from the API', async () => {
     let seenAuth = '';
     const apiServer = http.createServer((req, res) => {
@@ -145,6 +168,10 @@ try {
       req.on('end', () => {
         seenAuth = req.headers.authorization ?? '';
         const { text } = JSON.parse(body || '{}');
+        if (req.url === '/v1/rewrite') {
+          res.setHeader('content-type', 'application/json');
+          return res.end(JSON.stringify({ rewrites: ['Too many people came to the party.', 'The party was crowded.'] }));
+        }
         const i = text.indexOf('much');
         res.setHeader('content-type', 'application/json');
         res.end(JSON.stringify({ issues: i < 0 ? [] : [{ offset: i, length: 4, text: 'much', category: 'grammar', rule: 'AI_GRAMMAR', message: 'Use "many" with countable nouns.', replacements: ['many'], confidence: 0.8 }] }));
@@ -161,6 +188,12 @@ try {
     await page.keyboard.type('There were too much people at the party.');
     await page.waitForFunction(() => [...(document.querySelector('ssc-overlay')?.shadowRoot?.querySelectorAll('.u') ?? [])].some((u) => u.dataset.rule === 'AI_GRAMMAR'), null, { timeout: 10000 });
     assert.equal(seenAuth, 'Bearer test-key');
+    // Improve sentence -> pick a rewrite
+    await page.evaluate(() => { const ta = document.getElementById('ta'); const i = ta.value.indexOf('much') + 1; ta.setSelectionRange(i, i); });
+    await page.keyboard.press('Alt+Enter');
+    await page.locator('ssc-overlay .card .act', { hasText: 'Improve sentence' }).click();
+    await page.locator('ssc-overlay .card .rw').first().click();
+    assert.equal(await page.inputValue('#ta'), 'Too many people came to the party.');
     await sw.evaluate(async () => {
       const s = (await chrome.storage.sync.get('settings')).settings;
       await chrome.storage.sync.set({ settings: { ...s, deepCheck: false } });

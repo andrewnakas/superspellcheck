@@ -63,6 +63,16 @@ async function render() {
 
   const dict = await getDictionary();
   $('dict').replaceChildren(...dict.map((w) => chip(w, async () => { await setDictionary(dict.filter((x) => x !== w)); render(); })));
+  const { suppressed = [], ignoreStats = {} } = await api.storage.local.get(['suppressed', 'ignoreStats']);
+  $('suppressed').replaceChildren(
+    ...(suppressed as string[]).map((k) =>
+      chip(k.split('|').slice(1).join('|') || k, async () => {
+        delete ignoreStats[k];
+        await api.storage.local.set({ suppressed: (suppressed as string[]).filter((x) => x !== k), ignoreStats });
+        render();
+      }),
+    ),
+  );
   $('sites').replaceChildren(...s.disabledSites.map((h) => chip(h, async () => { await saveSettings({ disabledSites: s.disabledSites.filter((x) => x !== h) }); render(); })));
 }
 

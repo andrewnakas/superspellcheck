@@ -30,12 +30,17 @@ const STYLE = `
 .card .act { background: transparent; color: #60646c; padding: 2px 6px; font-size: 12px; }
 .card .act:hover { background: #f0f0f3; }
 .card .brand { margin-left: auto; color: #b9bbc6; font-size: 11px; align-self: center; }
+.card .rw { display: block; width: 100%; text-align: left; background: #f0f0f3; color: inherit; margin-bottom: 6px; padding: 6px 8px; }
+.card .rw:hover, .card .rw:focus-visible { background: #e0e1e6; outline: none; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (prefers-color-scheme: dark) {
   .card { background: #1c1d21; color: #edeef0; box-shadow: 0 8px 30px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.08); }
   .card .msg { color: #b0b4ba; }
   .card .actions { border-color: #2e3135; }
   .card .act { color: #b0b4ba; }
   .card .act:hover { background: #2e3135; }
+  .card .rw { background: #2e3135; }
+  .card .rw:hover, .card .rw:focus-visible { background: #3a3f44; }
 }
 `;
 
@@ -47,7 +52,14 @@ const style = document.createElement('style');
 style.textContent = STYLE;
 const layer = document.createElement('div');
 layer.className = 'layer';
-shadow.append(style, layer);
+const live = document.createElement('div');
+live.className = 'sr';
+live.setAttribute('aria-live', 'polite');
+shadow.append(style, layer, live);
+function announce(msg: string) {
+  live.textContent = '';
+  window.setTimeout(() => (live.textContent = msg), 50);
+}
 let mounted = false;
 function mount() {
   if (!mounted || !host.isConnected) {
@@ -59,7 +71,7 @@ function mount() {
 // ---------------------------------------------------------------- state
 
 let settings: Settings | null = null;
-const ignored = new Set<string>(); // "rule|text" ignored for this page session
+const ignored = new Set<string>(); // "rule|text": ignored this session, or suppressed after repeated dismissals
 const controllers = new Map<HTMLElement, Controller>();
 
 class Controller {
@@ -191,6 +203,7 @@ class Controller {
     const text = this.surface.getText();
     if (text.slice(issue.offset, issue.offset + issue.length) !== issue.text) return this.check();
     this.surface.replace(issue.offset, issue.offset + issue.length, replacement);
+    api.runtime.sendMessage({ type: 'accepted', rule: issue.rule }).catch(() => {});
     const delta = replacement.length - issue.length;
     this.issues = this.issues.filter((i) => i !== issue).map((i) => (i.offset > issue.offset ? { ...i, offset: i.offset + delta } : i));
     this.render();
@@ -219,10 +232,57 @@ class Controller {
 // ---------------------------------------------------------------- card
 
 let card: HTMLDivElement | null = null;
+let cardOwner: Controller | null = null;
 
 function hideCard() {
   card?.remove();
   card = null;
+  cardOwner = null;
+}
+
+/** Bounds of the sentence containing `offset`. */
+function sentenceAround(text: string, offset: number): [number, number] {
+  let start = offset;
+  while (start > 0 && !/[.!?\n]/.test(text[start - 1])) start--;
+  while (start < offset && /\s/.test(text[start])) start++;
+  let end = offset;
+  while (end < text.length && !/[.!?\n]/.test(text[end])) end++;
+  if (end < text.length && text[end] !== '\n') end++;
+  return [start, end];
+}
+
+async function showRewrites(ctrl: Controller, c: HTMLDivElement, at: number) {
+  const text = ctrl.surface.getText();
+  const [s, e] = sentenceAround(text, at);
+  const sentence = text.slice(s, e);
+  const body = document.createElement('div');
+  body.className = 'msg';
+  body.textContent = 'Rewriting\u2026';
+  c.replaceChildren(body);
+  announce('Rewriting sentence');
+  const res = await api.runtime.sendMessage({ type: 'rewrite', text: sentence, goal: 'clearer' }).catch(() => ({ error: 'unavailable' }));
+  if (card !== c) return;
+  if (!res || 'error' in res || !res.rewrites?.length) {
+    body.textContent = 'Couldn\u2019t get a rewrite right now.';
+    return;
+  }
+  body.textContent = 'Pick a version:';
+  for (const r of res.rewrites as string[]) {
+    const b = document.createElement('button');
+    b.className = 'rw';
+    b.textContent = r;
+    b.addEventListener('mousedown', (ev) => ev.preventDefault());
+    b.addEventListener('click', () => {
+      hideCard();
+      if (ctrl.surface.getText().slice(s, e) === sentence) {
+        ctrl.surface.replace(s, e, r);
+        api.runtime.sendMessage({ type: 'accepted', rule: 'AI_REWRITE' }).catch(() => {});
+      }
+    });
+    c.append(b);
+  }
+  (c.querySelector('.rw') as HTMLButtonElement | null)?.focus();
+  announce(`${res.rewrites.length} rewrites available`);
 }
 
 function showCard(ctrl: Controller, issue: Issue, focusFirst: boolean) {
@@ -262,6 +322,7 @@ function showCard(ctrl: Controller, issue: Issue, focusFirst: boolean) {
   ignore.textContent = 'Ignore';
   ignore.addEventListener('click', () => {
     ignored.add(`${issue.rule}|${issue.text}`);
+    api.runtime.sendMessage({ type: 'ignore', key: `${issue.rule}|${issue.text}` }).catch(() => {});
     for (const ct of controllers.values()) {
       ct.issues = ct.issues.filter((i) => !(i.rule === issue.rule && i.text === issue.text));
       ct.render();
@@ -280,6 +341,14 @@ function showCard(ctrl: Controller, issue: Issue, focusFirst: boolean) {
     });
     actions.append(add);
   }
+  if (settings?.deepCheck) {
+    const improve = document.createElement('button');
+    improve.className = 'act';
+    improve.textContent = 'Improve sentence';
+    improve.addEventListener('mousedown', (ev) => ev.preventDefault());
+    improve.addEventListener('click', () => showRewrites(ctrl, c, issue.offset));
+    actions.append(improve);
+  }
   const brand = document.createElement('span');
   brand.className = 'brand';
   brand.textContent = 'SuperSpellCheck';
@@ -294,12 +363,21 @@ function showCard(ctrl: Controller, issue: Issue, focusFirst: boolean) {
   c.style.left = `${left}px`;
   c.style.top = `${Math.max(8, top)}px`;
   card = c;
-  if (focusFirst) (c.querySelector('button') as HTMLButtonElement | null)?.focus();
+  cardOwner = ctrl;
+  if (focusFirst) {
+    (c.querySelector('button') as HTMLButtonElement | null)?.focus();
+    const sug = issue.replacements.length ? ` Suggestions: ${issue.replacements.slice(0, 3).join(', ')}.` : '';
+    announce(`${issue.message}${sug}`);
+  }
+  // Arrow keys move between the card's buttons.
   c.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      hideCard();
-      ctrl.el.focus();
-    }
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const buttons = [...c.querySelectorAll('button')] as HTMLButtonElement[];
+    const i = buttons.indexOf(shadow.activeElement as HTMLButtonElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const next = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? i + 1 : i - 1;
+    buttons[(next + buttons.length) % buttons.length].focus();
   });
 }
 
@@ -348,13 +426,21 @@ async function start() {
   document.addEventListener('keydown', (e) => {
     if (card && e.key === 'Escape') {
       e.stopPropagation();
+      const owner = cardOwner;
+      const focusInCard = document.activeElement === host;
       hideCard();
+      if (focusInCard) owner?.el.focus();
     }
   }, true);
   document.addEventListener('mousedown', (e) => {
     if (card && !e.composedPath().includes(card)) hideCard();
   }, true);
+  try {
+    const { suppressed = [] } = await api.storage.local.get('suppressed');
+    for (const k of suppressed as string[]) ignored.add(k);
+  } catch {}
   api.storage.onChanged.addListener((changes) => {
+    if (changes.suppressed) for (const k of (changes.suppressed.newValue ?? []) as string[]) ignored.add(k);
     if (!changes.settings) return;
     settings = { ...settings!, ...changes.settings.newValue };
     for (const [el, c] of controllers) {

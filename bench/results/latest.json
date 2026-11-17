@@ -1,0 +1,129 @@
+{
+ "word": {
+  "aspell.dat": {
+   "n": 516,
+   "ssc": {
+    "detect": 96.3,
+    "top1": 60.7,
+    "top5": 78.7
+   },
+   "hunspell": {
+    "detect": 96.5,
+    "top1": 53.3,
+    "top5": 73.4
+   },
+   "aspell": {
+    "detect": 97.3,
+    "top1": 58.7,
+    "top5": 80.8
+   }
+  },
+  "wikipedia.dat": {
+   "n": 2438,
+   "ssc": {
+    "detect": 98.6,
+    "top1": 82.3,
+    "top5": 93.4
+   },
+   "hunspell": {
+    "detect": 98.2,
+    "top1": 74.8,
+    "top5": 91.2
+   },
+   "aspell": {
+    "detect": 98.8,
+    "top1": 80.2,
+    "top5": 92.2
+   }
+  },
+  "holbrook-missp.dat": {
+   "n": 1597,
+   "ssc": {
+    "detect": 63.4,
+    "top1": 28.8,
+    "top5": 43.7
+   },
+   "hunspell": {
+    "detect": 62.5,
+    "top1": 15.4,
+    "top5": 32.4
+   },
+   "aspell": {
+    "detect": 64.7,
+    "top1": 23.0,
+    "top5": 40.4
+   }
+  },
+  "missp.dat": {
+   "n": 6000,
+   "ssc": {
+    "detect": 88.1,
+    "top1": 41.2,
+    "top5": 51.4
+   },
+   "hunspell": {
+    "detect": 87.7,
+    "top1": 31.2,
+    "top5": 41.8
+   },
+   "aspell": {
+    "detect": 88.6,
+    "top1": 38.2,
+    "top5": 54.4
+   }
+  }
+ },
+ "context": {
+  "n": 3000,
+  "ssc": {
+   "detect": 95.2,
+   "top1": 70.2
+  },
+  "hunspell": {
+   "detect": 99.6,
+   "top1": 30.0
+  },
+  "aspell": {
+   "detect": 100.0,
+   "top1": 30.9
+  }
+ },
+ "realword": {
+  "n": 1000,
+  "n_clean": 999,
+  "ssc": {
+   "recall": 73.5,
+   "fixed": 73.5,
+   "false_alarms_per_100_clean_sents": 1.0
+  },
+  "hunspell": {
+   "recall": 0.0,
+   "fixed": 0.0,
+   "note": "dictionary checkers cannot detect real-word errors"
+  }
+ },
+ "noise": {
+  "sentences": 6000,
+  "words": 110327,
+  "ssc": {
+   "flags_per_1000_words": 8.2,
+   "by_rule": {
+    "SPELLING": 833,
+    "CONFUSED_WORD": 46,
+    "PRONOUN_AGREEMENT": 2,
+    "REPEATED_WORD": 4,
+    "PROPER_NOUN_CAPITAL": 11,
+    "A_VS_AN": 4,
+    "MISSING_SPACE_AFTER_PUNCT": 1,
+    "SENTENCE_START_CAPITAL": 3,
+    "MODAL_OF": 1
+   }
+  },
+  "hunspell": {
+   "flags_per_1000_words": 13.14
+  },
+  "aspell": {
+   "flags_per_1000_words": 17.06
+  }
+ }
+}

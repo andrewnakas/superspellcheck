@@ -134,6 +134,37 @@ async function handle(msg: Request): Promise<unknown> {
       cache.clear();
       return { ok: true };
     }
+    case 'ignore': {
+      // Learn from dismissals: the second time the same flag is ignored, stop showing it for good.
+      const { ignoreStats = {}, suppressed = [] } = await api.storage.local.get(['ignoreStats', 'suppressed']);
+      ignoreStats[msg.key] = (ignoreStats[msg.key] ?? 0) + 1;
+      const rule = msg.key.split('|')[0];
+      ignoreStats[`rule:${rule}`] = (ignoreStats[`rule:${rule}`] ?? 0) + 1;
+      if (ignoreStats[msg.key] >= 2 && !suppressed.includes(msg.key)) suppressed.push(msg.key);
+      await api.storage.local.set({ ignoreStats, suppressed });
+      return { ok: true };
+    }
+    case 'accepted': {
+      const { acceptStats = {} } = await api.storage.local.get('acceptStats');
+      acceptStats[msg.rule] = (acceptStats[msg.rule] ?? 0) + 1;
+      await api.storage.local.set({ acceptStats });
+      return { ok: true };
+    }
+    case 'rewrite': {
+      const [settings, key] = await Promise.all([getSettings(), getApiKey()]);
+      if (!settings.deepCheck || !key) return { error: 'not_enabled' };
+      try {
+        const res = await fetch(`${settings.apiBase.replace(/\/$/, '')}/v1/rewrite`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+          body: JSON.stringify({ text: msg.text, goal: msg.goal }),
+        });
+        if (!res.ok) return { error: `rewrite failed: ${res.status}` };
+        return { rewrites: (await res.json()).rewrites ?? [] };
+      } catch (err) {
+        return { error: String(err) };
+      }
+    }
     case 'getSettings':
       return getSettings();
     case 'ping':
