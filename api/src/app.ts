@@ -5,6 +5,8 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { locate } from './locate.ts';
 import { deepCheck, isGoal, RefusedError, rewrite, type Client } from './llm.ts';
+import { billingConfigFromEnv, billingRoutes, type BillingConfig } from './billing.ts';
+import type { AccountStore } from './db.ts';
 
 export const MAX_CHARS = 8000;
 
@@ -54,11 +56,16 @@ export class RateLimiter {
   }
 }
 
-export function createApp(opts: { client?: Client; keys?: KeyStore; limiter?: RateLimiter } = {}) {
+export function createApp(opts: { client?: Client; keys?: KeyStore; limiter?: RateLimiter; accounts?: AccountStore; billing?: BillingConfig | null } = {}) {
   const client = opts.client ?? new Anthropic();
-  const keys = opts.keys ?? new EnvKeyStore();
+  const accounts = opts.accounts;
+  // Paid accounts (SQLite) first, then static dev keys from SSC_API_KEYS.
+  const envKeys = new EnvKeyStore();
+  const keys: KeyStore = opts.keys ?? { lookup: async (k) => (await accounts?.lookup(k)) ?? envKeys.lookup(k) };
   const limiter = opts.limiter ?? new RateLimiter(Number(process.env.SSC_RATE_PER_MIN ?? 60));
   const app = new Hono<{ Variables: { account: Account } }>();
+
+  if (accounts) app.route('/billing', billingRoutes(accounts, opts.billing === undefined ? billingConfigFromEnv() : opts.billing));
 
   app.use('/v1/*', cors({ origin: '*', allowHeaders: ['authorization', 'content-type'], allowMethods: ['POST', 'GET'] }));
   app.get('/v1/health', (c) => c.json({ ok: true }));
@@ -97,6 +104,7 @@ export function createApp(opts: { client?: Client; keys?: KeyStore; limiter?: Ra
   app.post('/v1/check', async (c) => {
     const r = await readText(c);
     if (r instanceof Response) return r;
+    if (accounts && !accounts.meter(c.get('account'), r.text.length)) return c.json({ error: 'monthly_limit_reached' }, 402);
     const t0 = Date.now();
     try {
       const issues = locate(r.text, await deepCheck(client, r.text));
@@ -107,11 +115,25 @@ export function createApp(opts: { client?: Client; keys?: KeyStore; limiter?: Ra
     }
   });
 
+  app.get('/v1/account', (c) => {
+    const a = c.get('account');
+    const usage = accounts?.usage(a.id);
+    return c.json({ plan: a.plan, usage: usage ?? null });
+  });
+
+  app.post('/v1/rotate-key', (c) => {
+    if (!accounts) return c.json({ error: 'not_supported' }, 404);
+    const auth = c.req.header('authorization') ?? '';
+    const key = accounts.rotateKey(auth.slice(7).trim());
+    return key ? c.json({ key }) : c.json({ error: 'invalid_api_key' }, 401);
+  });
+
   app.post('/v1/rewrite', async (c) => {
     const r = await readText(c);
     if (r instanceof Response) return r;
     const goal = String(r.body.goal ?? 'clearer');
     if (!isGoal(goal)) return c.json({ error: 'invalid_goal' }, 400);
+    if (accounts && !accounts.meter(c.get('account'), r.text.length)) return c.json({ error: 'monthly_limit_reached' }, 402);
     try {
       return c.json({ rewrites: await rewrite(client, r.text, goal) });
     } catch (err) {
