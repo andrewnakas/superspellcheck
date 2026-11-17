@@ -12,6 +12,7 @@ import argparse
 import glob
 import json
 import os
+import sys
 
 import torch
 from datasets import load_dataset
@@ -20,6 +21,15 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import SFTConfig, SFTTrainer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def be_gentle():
+    """On a personal machine, stay in the background: low priority and half the cores."""
+    try:
+        os.nice(10)
+    except OSError:
+        pass
+    torch.set_num_threads(max(1, (os.cpu_count() or 2) // 2))
 
 
 def main():
@@ -35,7 +45,17 @@ def main():
     ap.add_argument("--lora-r", type=int, default=32)
     ap.add_argument("--save-steps", type=int, default=500)
     ap.add_argument("--smoke", action="store_true", help="20 tiny steps on CPU to check the pipeline")
+    ap.add_argument("--allow-cpu", action="store_true", help="train without a CUDA GPU anyway (very slow)")
     a = ap.parse_args()
+
+    if not torch.cuda.is_available():
+        if not (a.smoke or a.allow_cpu):
+            sys.exit(
+                "No CUDA GPU found. A full fine-tune on a laptop CPU/MPS would take days and make the machine\n"
+                "unusable. Train on a free Colab or Kaggle GPU instead (see train/README.md), or pass --smoke for\n"
+                "a 20-step pipeline check (or --allow-cpu if you really mean it)."
+            )
+        be_gentle()
 
     if a.smoke:
         a.batch, a.grad_accum, a.max_len, a.save_steps = 2, 1, 96, 10

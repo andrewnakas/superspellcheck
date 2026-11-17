@@ -27,6 +27,13 @@ PROMPT = json.load(open(os.path.join(os.path.dirname(HERE), "train", "prompt.jso
 class Corrector:
     def __init__(self, model_id):
         dev = "cuda" if torch.cuda.is_available() else "cpu"
+        if dev == "cpu":
+            # Don't take over a laptop: low priority, half the cores.
+            try:
+                os.nice(10)
+            except OSError:
+                pass
+            torch.set_num_threads(max(1, (os.cpu_count() or 2) // 2))
         self.tok = AutoTokenizer.from_pretrained(model_id)
         self.tok.padding_side = "left"
         if self.tok.pad_token is None:

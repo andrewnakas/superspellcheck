@@ -26,6 +26,15 @@ Defaults to 300k pairs:
   - If the Rust engine is built (`cargo build --release`), it checks the corrected side of every pair and drops pairs that still contain errors. The raw dataset has some, e.g. "This is is the latest...".
   - Sentences from `bench/` are excluded so test results stay honest.
 
+## Don't train on your laptop
+
+A full fine-tune needs an NVIDIA GPU. On a Mac or any machine without CUDA, `finetune.py` refuses to start unless you pass `--smoke` (a 20-step check) or `--allow-cpu`. Even then it runs at low priority on half the cores. If a training or eval run is already slowing your machine, stop it:
+
+```bash
+ps aux | grep -E "finetune|make_data|ai_eval|export.py|accelerate" | grep -v grep
+pkill -f "train/finetune.py"        # or kill -9 <PID>
+```
+
 ## Run it on Colab (free T4)
 
 1. Open https://colab.research.google.com, choose **File → Upload notebook**, and pick `train/finetune.ipynb`. You can also open it straight from GitHub.
