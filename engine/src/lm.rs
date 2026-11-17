@@ -167,7 +167,7 @@ impl LanguageModel {
     pub fn classify(&self, word: &str) -> WordStatus {
         let w = normalize_apostrophes(word);
         let lower = w.to_lowercase();
-        if self.variants.contains(&lower) {
+        if self.variants.contains(&lower) || FOREIGN_PARTICLES.contains(&lower.as_str()) {
             return WordStatus::Valid;
         }
         if let Some(id) = self.id(&lower) {
@@ -185,10 +185,10 @@ impl LanguageModel {
                 }
                 // Title-case input for a cased lexicon entry like "Mcdonald" vs "McDonald": accept first-letter matches.
                 if let Some(c) = ci.cased.iter().find(|c| c.chars().skip(1).any(|x| x.is_lowercase())) {
-                    if c.chars().count() > 3 {
-                        return WordStatus::WrongCase(c.clone());
+                    if FOREIGN_PARTICLES.contains(&lower.as_str()) {
+                        return WordStatus::Valid; // "de", "von", "la" inside names and phrases
                     }
-                    return WordStatus::Valid; // "mon", "jan": too ambiguous to nag about
+                    return WordStatus::WrongCase(c.clone());
                 }
             }
         }
@@ -207,6 +207,8 @@ impl LanguageModel {
         WordStatus::Unknown
     }
 }
+
+const FOREIGN_PARTICLES: &[&str] = &["de", "la", "le", "du", "von", "van", "der", "da", "di", "del", "al", "el", "des", "den", "les", "los", "las"];
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WordStatus {

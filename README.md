@@ -48,7 +48,7 @@ Results from `bench/run.py --quick`. Top-1 means the first suggestion is the cor
 
 | Task | SuperSpellCheck | Hunspell (Chrome) | Aspell |
 |---|---|---|---|
-| Typos in real sentences, top-1 fix | **69.7%** | 29.7% | 31.3% |
+| Typos in real sentences, top-1 fix | **72.2%** | 29.7% | 31.3% |
 | Wikipedia misspellings, top-1 | **82.3%** | 75.3% | 80.7% |
 | Birkbeck `missp`, top-1 | **40.4%** | 30.2% | 37.5% |
 | Holbrook (children's writing), top-1 | **29.1%** | 15.4% | 23.0% |

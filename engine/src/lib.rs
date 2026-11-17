@@ -296,15 +296,35 @@ impl Engine {
             match self.lm.classify(word) {
                 WordStatus::Valid => {}
                 WordStatus::WrongCase(correct) => {
-                    out.push(RawIssue {
-                        start: t.start,
-                        end: t.end,
-                        replacements: vec![correct.clone()],
-                        category: Category::Capitalization,
-                        rule: "PROPER_NOUN_CAPITAL",
-                        message: format!("\u{201C}{}\u{201D} should be capitalized.", correct),
-                        confidence: 0.85,
-                    });
+                    // A lowercase form of a proper noun: either it needs a capital ("america"),
+                    // or it is a typo that happens to match a name ("tim" for "time", "th" for "the").
+                    let mut sugg = self.suggest(word, ctx, opts.max_suggestions);
+                    let case_score = -self.weights.alpha * 0.1 + self.weights.beta * self.seq_score(&[correct.to_lowercase().as_str()], ctx) - 2.0;
+                    let best_other = sugg.first().map(|s| s.score);
+                    if best_other.map_or(true, |b| case_score >= b) || letters > 4 {
+                        out.push(RawIssue {
+                            start: t.start,
+                            end: t.end,
+                            replacements: vec![correct.clone()],
+                            category: Category::Capitalization,
+                            rule: "PROPER_NOUN_CAPITAL",
+                            message: format!("\u{201C}{}\u{201D} should be capitalized.", correct),
+                            confidence: 0.85,
+                        });
+                    } else {
+                        sugg.retain(|s| s.word != correct.to_lowercase());
+                        let mut replacements: Vec<String> = sugg.iter().take(opts.max_suggestions.saturating_sub(1)).map(|s| restore_case(word, &self.cased_form(&s.word), t.sentence_start)).collect();
+                        replacements.push(correct.clone());
+                        out.push(RawIssue {
+                            start: t.start,
+                            end: t.end,
+                            replacements,
+                            category: Category::Spelling,
+                            rule: "SPELLING",
+                            message: "Possible spelling mistake.".to_string(),
+                            confidence: 0.9,
+                        });
+                    }
                 }
                 WordStatus::Unknown => {
                     if all_caps && letters <= 6 {
