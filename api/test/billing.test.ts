@@ -20,8 +20,7 @@ function setup() {
     return sessions.get(id);
   };
   const accounts = new AccountStore(':memory:');
-  const client = { beta: { messages: { parse: async () => ({ stop_reason: 'end_turn', parsed_output: { edits: [] } }) } } } as any;
-  const app = createApp({ client, accounts, billing: { stripe, webhookSecret: SECRET, pricePro: 'price_123', publicUrl: 'https://ssc.test' } });
+  const app = createApp({ accounts, billing: { stripe, webhookSecret: SECRET, pricePro: 'price_123', publicUrl: 'https://ssc.test' } });
   const webhook = async (event: object) => {
     const payload = JSON.stringify(event);
     const header = stripe.webhooks.generateTestHeaderString({ payload, secret: SECRET });
@@ -56,12 +55,11 @@ test('checkout -> webhook -> one-time key -> API access -> cancellation', async 
   const page2 = await (await app.request('/billing/success?session_id=cs_0')).text();
   assert.ok(!page2.includes('<code>'), 'key shown only once');
 
-  assert.equal((await app.request('/v1/check', json({ text: 'Hello there friend.' }, key))).status, 200);
   const acct = await (await app.request('/v1/account', { headers: { authorization: `Bearer ${key}` } })).json();
-  assert.deepEqual(acct, { plan: 'pro', usage: { requests: 1, chars: 19 } });
+  assert.deepEqual(acct, { plan: 'pro', usage: { requests: 0, chars: 0 } });
 
   await webhook({ id: 'evt_2', object: 'event', type: 'customer.subscription.deleted', data: { object: { id: 'sub_1', object: 'subscription', status: 'canceled' } } });
-  assert.equal((await app.request('/v1/check', json({ text: 'Hello again.' }, key))).status, 401);
+  assert.equal((await app.request('/v1/account', { headers: { authorization: `Bearer ${key}` } })).status, 401);
 });
 
 test('monthly allowance is enforced', async () => {
@@ -87,6 +85,6 @@ test('key rotation revokes the old key', async () => {
 });
 
 test('billing reports not configured without Stripe settings', async () => {
-  const app = createApp({ client: {} as any, accounts: new AccountStore(':memory:'), billing: null, keys: new EnvKeyStore('') });
+  const app = createApp({ accounts: new AccountStore(':memory:'), billing: null, keys: new EnvKeyStore('') });
   assert.equal((await app.request('/billing/checkout', json({ email: 'a@b.co' }))).status, 503);
 });

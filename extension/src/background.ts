@@ -1,7 +1,8 @@
 // Background (service worker on Chrome, event page on Firefox/Safari).
 // Hosts the WASM engine once for all tabs; content scripts ask it to check text.
 import init, { WasmEngine } from '../pkg/ssc_engine.js';
-import { api, getApiKey, getDictionary, getSettings, setDictionary } from './storage';
+import { correctionToIssues, sentences } from './diff';
+import { api, getDictionary, getSettings, setDictionary } from './storage';
 import type { CheckResponse, Issue, Request, Settings } from './types';
 
 let enginePromise: Promise<WasmEngine> | null = null;
@@ -67,38 +68,69 @@ async function check(text: string): Promise<Issue[]> {
   return out;
 }
 
-// ---- Pro: AI deep check. Only runs when the user turned it on and has a key.
-const deepCache = new Map<string, Issue[]>();
-const MIN_WORDS = 4;
+// ---- On-device AI deep check (fine-tuned Qwen). Runs only if the user turned it on.
+// Chrome hosts the model in an offscreen document (service workers can't run it);
+// Firefox/Safari load offscreen.js into the background page itself.
+const aiCache = new Map<string, Issue[]>(); // sentence -> sentence-relative issues
+let aiCacheModel = '';
+let creatingOffscreen: Promise<void> | null = null;
 
-async function deepCheckParagraph(para: string, base: string, key: string): Promise<Issue[]> {
-  const hit = deepCache.get(para);
-  if (hit) return hit;
-  const res = await fetch(`${base.replace(/\/$/, '')}/v1/check`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-    body: JSON.stringify({ text: para }),
-  });
-  if (!res.ok) throw new Error(`deep check failed: ${res.status}`);
-  const issues = ((await res.json()).issues ?? []) as Issue[];
-  if (deepCache.size >= CACHE_MAX) deepCache.delete(deepCache.keys().next().value as string);
-  deepCache.set(para, issues);
-  return issues;
+async function ensureOffscreen() {
+  const off = (api as any).offscreen;
+  if (!off) throw new Error('offscreen documents unsupported');
+  if (await off.hasDocument?.()) return;
+  creatingOffscreen ??= off
+    .createDocument({ url: 'offscreen.html', reasons: ['WORKERS'], justification: 'Runs the on-device grammar model' })
+    .finally(() => (creatingOffscreen = null));
+  await creatingOffscreen;
 }
 
-async function deepCheck(text: string): Promise<Issue[]> {
-  const [settings, key] = await Promise.all([getSettings(), getApiKey()]);
-  if (!settings.deepCheck || !key) return [];
-  const jobs: Array<Promise<Issue[]>> = [];
-  const re = /[^\n]+/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    const para = m[0];
-    const index = m.index;
-    if (para.trim().split(/\s+/).length < MIN_WORDS) continue;
-    jobs.push(deepCheckParagraph(para, settings.apiBase, key).then((is) => is.map((i) => ({ ...i, offset: i.offset + index }))));
+async function ai(msg: object): Promise<any> {
+  const hook = (globalThis as any).__sscAi;
+  const full = { target: 'ssc-ai', ...msg };
+  if (hook) return hook(full);
+  await ensureOffscreen();
+  return api.runtime.sendMessage(full);
+}
+
+async function aiLoad(s: Settings) {
+  return ai({ type: 'load', model: s.aiModel, host: s.aiHost || undefined });
+}
+
+/** True if the model is ready; otherwise starts loading it in the background and returns false. */
+async function aiReady(s: Settings): Promise<boolean> {
+  const st = await ai({ type: 'status' });
+  if (st?.state === 'ready' && st.model === s.aiModel) return true;
+  if (st?.state !== 'loading') void aiLoad(s);
+  return false;
+}
+
+const AI_MIN_WORDS = 3;
+const AI_MAX_WORDS = 60;
+
+async function aiCheck(text: string): Promise<Issue[]> {
+  const s = await getSettings();
+  if (!s.aiCheck || !(await aiReady(s))) return [];
+  if (aiCacheModel !== s.aiModel) {
+    aiCache.clear();
+    aiCacheModel = s.aiModel;
   }
-  return (await Promise.all(jobs)).flat();
+  const e = await engine();
+  const sents = sentences(text).filter((x) => {
+    const n = x.text.split(/\s+/).length;
+    return n >= AI_MIN_WORDS && n <= AI_MAX_WORDS;
+  });
+  const todo = [...new Set(sents.map((x) => x.text).filter((t) => !aiCache.has(t)))];
+  if (todo.length) {
+    const res = await ai({ type: 'correct', sentences: todo });
+    if (res?.error) throw new Error(res.error);
+    todo.forEach((t, i) => {
+      if (aiCache.size >= CACHE_MAX) aiCache.delete(aiCache.keys().next().value as string);
+      aiCache.set(t, correctionToIssues(t, res.corrections[i] ?? t, (w) => e.isValid(w)));
+    });
+  }
+  const minConf = s.minConfidence;
+  return sents.flatMap((x) => (aiCache.get(x.text) ?? []).filter((i) => i.confidence >= minConf).map((i) => ({ ...i, offset: i.offset + x.offset })));
 }
 
 async function handle(msg: Request): Promise<unknown> {
@@ -112,10 +144,10 @@ async function handle(msg: Request): Promise<unknown> {
         return { error: String(err) } satisfies CheckResponse;
       }
     }
-    case 'deepCheck': {
+    case 'aiCheck': {
       const t0 = performance.now();
       try {
-        return { issues: await deepCheck(msg.text), ms: performance.now() - t0 } satisfies CheckResponse;
+        return { issues: await aiCheck(msg.text), ms: performance.now() - t0 } satisfies CheckResponse;
       } catch (err) {
         return { error: String(err) } satisfies CheckResponse;
       }
@@ -150,21 +182,11 @@ async function handle(msg: Request): Promise<unknown> {
       await api.storage.local.set({ acceptStats });
       return { ok: true };
     }
-    case 'rewrite': {
-      const [settings, key] = await Promise.all([getSettings(), getApiKey()]);
-      if (!settings.deepCheck || !key) return { error: 'not_enabled' };
-      try {
-        const res = await fetch(`${settings.apiBase.replace(/\/$/, '')}/v1/rewrite`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-          body: JSON.stringify({ text: msg.text, goal: msg.goal }),
-        });
-        if (!res.ok) return { error: `rewrite failed: ${res.status}` };
-        return { rewrites: (await res.json()).rewrites ?? [] };
-      } catch (err) {
-        return { error: String(err) };
-      }
-    }
+    case 'aiLoad':
+      return aiLoad(await getSettings());
+    case 'aiStatus':
+      await api.storage.local.set({ aiStatus: msg.status });
+      return { ok: true };
     case 'getSettings':
       return getSettings();
     case 'ping':
@@ -173,7 +195,7 @@ async function handle(msg: Request): Promise<unknown> {
 }
 
 api.runtime.onMessage.addListener((msg: Request, _sender, sendResponse) => {
-  handle(msg).then(sendResponse);
+  handle(msg).then(sendResponse, (err) => sendResponse({ error: String(err) }));
   return true; // async response
 });
 

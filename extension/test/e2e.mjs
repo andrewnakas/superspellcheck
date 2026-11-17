@@ -157,49 +157,59 @@ try {
     assert.equal((await underlines()).filter((r) => r.top >= taBox.y && r.top <= taBox.y + taBox.height).length, 0);
   });
 
-  await step('Pro deep check merges AI findings from the API', async () => {
-    let seenAuth = '';
-    const apiServer = http.createServer((req, res) => {
-      res.setHeader('access-control-allow-origin', '*');
-      res.setHeader('access-control-allow-headers', 'authorization, content-type');
-      if (req.method === 'OPTIONS') return res.end();
-      let body = '';
-      req.on('data', (d) => (body += d));
-      req.on('end', () => {
-        seenAuth = req.headers.authorization ?? '';
-        const { text } = JSON.parse(body || '{}');
-        if (req.url === '/v1/rewrite') {
-          res.setHeader('content-type', 'application/json');
-          return res.end(JSON.stringify({ rewrites: ['Too many people came to the party.', 'The party was crowded.'] }));
+  // On-device AI: needs a local mirror of the model (SSC_MODEL_DIR, laid out like the HF Hub:
+  // <dir>/<org>/<model>/resolve/main/...). Skipped when absent so CI stays fast.
+  const modelDir = process.env.SSC_MODEL_DIR;
+  if (modelDir) {
+    await step('on-device AI model flags a grammar error and merges with engine results', async () => {
+      const mirror = http.createServer((req, res) => {
+        res.setHeader('access-control-allow-origin', '*');
+        const file = path.join(modelDir, decodeURIComponent(new URL(req.url, 'http://x').pathname));
+        if (!file.startsWith(modelDir) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+          res.statusCode = 404;
+          return res.end();
         }
-        const i = text.indexOf('much');
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ issues: i < 0 ? [] : [{ offset: i, length: 4, text: 'much', category: 'grammar', rule: 'AI_GRAMMAR', message: 'Use "many" with countable nouns.', replacements: ['many'], confidence: 0.8 }] }));
+        res.setHeader('content-length', fs.statSync(file).size);
+        fs.createReadStream(file).pipe(res);
+      }).listen(0);
+      const host = `http://127.0.0.1:${mirror.address().port}/`;
+      await sw.evaluate(async (host) => {
+        const s = (await chrome.storage.sync.get('settings')).settings ?? {};
+        await chrome.storage.sync.set({ settings: { ...s, aiCheck: true, aiHost: host, minConfidence: 0.5 } });
+      }, host);
+      // Wait for the model to download and load (CPU/WASM in headless Chromium).
+      // Messages must come from an extension page: a service worker can't message itself.
+      const extId = new URL(sw.url()).host;
+      const opts = await ctx.newPage();
+      await opts.goto(`chrome-extension://${extId}/options.html`);
+      const send = (msg) => opts.evaluate((m) => chrome.runtime.sendMessage(m), msg);
+      const loaded = await send({ type: 'aiLoad' });
+      await page.waitForTimeout(500);
+      const status = (await sw.evaluate(async () => (await chrome.storage.local.get('aiStatus')).aiStatus)) ?? loaded;
+      assert.equal(status?.state, 'ready', JSON.stringify({ status, loaded }));
+      console.log(`     model ready on ${status.device}`);
+
+      await page.fill('#ta', '');
+      await page.click('#ta');
+      await page.keyboard.type('Yesterday he go to the store and buy some bread.');
+      await page.waitForFunction(() => [...(document.querySelector('ssc-overlay')?.shadowRoot?.querySelectorAll('.u') ?? [])].some((u) => u.dataset.rule?.startsWith('AI_')), null, { timeout: 120000 });
+      const rules = (await underlines()).map((u) => u.rule);
+      console.log(`     underlines: ${rules.join(', ')}`);
+
+      // A correct sentence gets no AI flags.
+      const clean = await send({ type: 'aiCheck', text: 'The weather was lovely, so we walked to the park.' });
+      assert.deepEqual(clean.issues, [], JSON.stringify(clean));
+
+      await sw.evaluate(async () => {
+        const s = (await chrome.storage.sync.get('settings')).settings;
+        await chrome.storage.sync.set({ settings: { ...s, aiCheck: false } });
       });
-    }).listen(0);
-    const base = `http://127.0.0.1:${apiServer.address().port}`;
-    await sw.evaluate(async (base) => {
-      const s = (await chrome.storage.sync.get('settings')).settings ?? {};
-      await chrome.storage.sync.set({ settings: { ...s, deepCheck: true, apiBase: base } });
-      await chrome.storage.local.set({ apiKey: 'test-key' });
-    }, base);
-    await page.fill('#ta', '');
-    await page.click('#ta');
-    await page.keyboard.type('There were too much people at the party.');
-    await page.waitForFunction(() => [...(document.querySelector('ssc-overlay')?.shadowRoot?.querySelectorAll('.u') ?? [])].some((u) => u.dataset.rule === 'AI_GRAMMAR'), null, { timeout: 10000 });
-    assert.equal(seenAuth, 'Bearer test-key');
-    // Improve sentence -> pick a rewrite
-    await page.evaluate(() => { const ta = document.getElementById('ta'); const i = ta.value.indexOf('much') + 1; ta.setSelectionRange(i, i); });
-    await page.keyboard.press('Alt+Enter');
-    await page.locator('ssc-overlay .card .act', { hasText: 'Improve sentence' }).click();
-    await page.locator('ssc-overlay .card .rw').first().click();
-    assert.equal(await page.inputValue('#ta'), 'Too many people came to the party.');
-    await sw.evaluate(async () => {
-      const s = (await chrome.storage.sync.get('settings')).settings;
-      await chrome.storage.sync.set({ settings: { ...s, deepCheck: false } });
+      await opts.close();
+      mirror.close();
     });
-    apiServer.close();
-  });
+  } else {
+    console.log('skip on-device AI test (set SSC_MODEL_DIR to run it)');
+  }
 
   await step('check latency is interactive', async () => {
     const ms = await sw.evaluate(async () => {

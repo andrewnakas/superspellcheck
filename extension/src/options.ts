@@ -1,4 +1,4 @@
-import { api, getApiKey, getDictionary, getSettings, saveSettings, setApiKey, setDictionary } from './storage';
+import { api, getDictionary, getSettings, saveSettings, setDictionary } from './storage';
 
 const RULES: Array<[string, string]> = [
   ['SPELLING', 'Spelling'],
@@ -57,9 +57,8 @@ async function render() {
     }),
   );
 
-  $<HTMLInputElement>('deep').checked = s.deepCheck;
-  $<HTMLInputElement>('apikey').value = await getApiKey();
-  $<HTMLInputElement>('apibase').value = s.apiBase;
+  $<HTMLInputElement>('ai').checked = s.aiCheck;
+  showAiStatus();
 
   const dict = await getDictionary();
   $('dict').replaceChildren(...dict.map((w) => chip(w, async () => { await setDictionary(dict.filter((x) => x !== w)); render(); })));
@@ -85,96 +84,42 @@ $<HTMLFormElement>('addform').addEventListener('submit', async (e) => {
   if (input.value.trim()) {
     await setDictionary([...(await getDictionary()), input.value.trim()]);
     input.value = '';
-    /** Custom servers need a host permission granted from a user gesture. */
-async function ensureOrigin(base: string): Promise<boolean> {
-  try {
-    const origin = new URL(base).origin + '/*';
-    return await api.permissions.request({ origins: [origin] });
-  } catch {
-    return false;
+    render();
   }
-}
+});
 
-async function testConnection() {
-  const status = $('deepstatus');
+// ---- On-device AI model
+const MB = (n: number) => `${Math.round(n)}%`;
+
+async function showAiStatus() {
+  const { aiStatus } = await api.storage.local.get('aiStatus');
   const s = await getSettings();
-  const key = await getApiKey();
-  if (!s.deepCheck) return void (status.textContent = '');
-  if (!key) return void (status.textContent = 'Add your API key to turn on deep check.');
-  try {
-    const res = await fetch(`${s.apiBase.replace(/\/$/, '')}/v1/health`, { headers: { authorization: `Bearer ${key}` } });
-    status.textContent = res.ok ? 'Connected.' : res.status === 401 ? 'That API key was not accepted.' : `Server error (${res.status}).`;
-  } catch {
-    status.textContent = 'Could not reach the server.';
-  }
+  const el = $('aistatus');
+  const gpu = 'gpu' in navigator ? 'Your browser supports GPU acceleration.' : 'No GPU acceleration in this browser, so checks will be slower.';
+  if (!s.aiCheck) el.textContent = gpu;
+  else if (!aiStatus || aiStatus.state === 'off') el.textContent = 'Preparing download\u2026';
+  else if (aiStatus.state === 'loading') el.textContent = `Downloading the AI model: ${MB(aiStatus.progress ?? 0)}`;
+  else if (aiStatus.state === 'ready') el.textContent = `Ready. Running on ${aiStatus.device === 'webgpu' ? 'your GPU' : 'your CPU'}.`;
+  else el.textContent = 'The AI model could not be loaded. Turn it off and on to retry.';
 }
 
-$<HTMLInputElement>('deep').addEventListener('change', async (e) => {
+$<HTMLInputElement>('ai').addEventListener('change', async (e) => {
   const on = (e.target as HTMLInputElement).checked;
-  if (on && !(await ensureOrigin((await getSettings()).apiBase))) {
-    (e.target as HTMLInputElement).checked = false;
-    return;
-  }
-  await saveSettings({ deepCheck: on });
-  testConnection();
-});
-$<HTMLInputElement>('apikey').addEventListener('change', async (e) => {
-  await setApiKey((e.target as HTMLInputElement).value);
-  testConnection();
-});
-$<HTMLInputElement>('apibase').addEventListener('change', async (e) => {
-  const v = (e.target as HTMLInputElement).value.trim();
-  if (await ensureOrigin(v)) await saveSettings({ apiBase: v });
-  else (e.target as HTMLInputElement).value = (await getSettings()).apiBase;
-  testConnection();
+  await saveSettings({ aiCheck: on });
+  if (on) api.runtime.sendMessage({ type: 'aiLoad' }).catch(() => {});
+  showAiStatus();
 });
 
-render().then(testConnection);
-  }
+$('airemove').addEventListener('click', async () => {
+  await saveSettings({ aiCheck: false });
+  // transformers.js caches model files with the Cache API under this extension's origin.
+  for (const k of await caches.keys()) if (k.startsWith('transformers')) await caches.delete(k);
+  await api.storage.local.remove('aiStatus');
+  render();
 });
 
-/** Custom servers need a host permission granted from a user gesture. */
-async function ensureOrigin(base: string): Promise<boolean> {
-  try {
-    const origin = new URL(base).origin + '/*';
-    return await api.permissions.request({ origins: [origin] });
-  } catch {
-    return false;
-  }
-}
-
-async function testConnection() {
-  const status = $('deepstatus');
-  const s = await getSettings();
-  const key = await getApiKey();
-  if (!s.deepCheck) return void (status.textContent = '');
-  if (!key) return void (status.textContent = 'Add your API key to turn on deep check.');
-  try {
-    const res = await fetch(`${s.apiBase.replace(/\/$/, '')}/v1/health`, { headers: { authorization: `Bearer ${key}` } });
-    status.textContent = res.ok ? 'Connected.' : res.status === 401 ? 'That API key was not accepted.' : `Server error (${res.status}).`;
-  } catch {
-    status.textContent = 'Could not reach the server.';
-  }
-}
-
-$<HTMLInputElement>('deep').addEventListener('change', async (e) => {
-  const on = (e.target as HTMLInputElement).checked;
-  if (on && !(await ensureOrigin((await getSettings()).apiBase))) {
-    (e.target as HTMLInputElement).checked = false;
-    return;
-  }
-  await saveSettings({ deepCheck: on });
-  testConnection();
-});
-$<HTMLInputElement>('apikey').addEventListener('change', async (e) => {
-  await setApiKey((e.target as HTMLInputElement).value);
-  testConnection();
-});
-$<HTMLInputElement>('apibase').addEventListener('change', async (e) => {
-  const v = (e.target as HTMLInputElement).value.trim();
-  if (await ensureOrigin(v)) await saveSettings({ apiBase: v });
-  else (e.target as HTMLInputElement).value = (await getSettings()).apiBase;
-  testConnection();
+api.storage.onChanged.addListener((c) => {
+  if (c.aiStatus) showAiStatus();
 });
 
-render().then(testConnection);
+render();

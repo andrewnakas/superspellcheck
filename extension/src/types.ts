@@ -19,9 +19,11 @@ export interface Settings {
   disabledRules: string[];
   /** Turn off the browser's own spellcheck in fields we handle, to avoid double underlines. */
   replaceNativeSpellcheck: boolean;
-  /** Pro: also send paragraphs to the cloud API for an AI deep check. Off unless the user opts in. */
-  deepCheck: boolean;
-  apiBase: string;
+  /** On-device AI deep check (fine-tuned Qwen). Off until the user opts in and downloads the model. */
+  aiCheck: boolean;
+  aiModel: string;
+  /** Model host override; empty means Hugging Face. Used by tests and self-hosted mirrors. */
+  aiHost: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -30,17 +32,20 @@ export const DEFAULT_SETTINGS: Settings = {
   disabledSites: [],
   disabledRules: [],
   replaceNativeSpellcheck: true,
-  deepCheck: false,
-  apiBase: 'https://api.superspellcheck.app',
+  aiCheck: false,
+  // Swap for the fine-tuned model once it is published (see train/README.md).
+  aiModel: 'onnx-community/Qwen3-0.6B-ONNX',
+  aiHost: '',
 };
 
 export type Request =
   | { type: 'check'; text: string }
-  | { type: 'deepCheck'; text: string }
+  | { type: 'aiCheck'; text: string }
+  | { type: 'aiLoad' }
+  | { type: 'aiStatus'; status: unknown }
   | { type: 'addWord'; word: string }
   | { type: 'ignore'; key: string }
   | { type: 'accepted'; rule: string }
-  | { type: 'rewrite'; text: string; goal: 'clearer' | 'shorter' | 'formal' | 'friendly' }
   | { type: 'removeWord'; word: string }
   | { type: 'getSettings' }
   | { type: 'ping' };

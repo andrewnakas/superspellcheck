@@ -43,6 +43,7 @@ jobs:
           npm ci
           npm run wasm
           npm run typecheck
+          npm run test:unit
           npm run build
           npx playwright@1.49.1 install --with-deps chromium
           npm i --no-save playwright@1.49.1

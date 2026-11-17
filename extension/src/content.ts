@@ -6,6 +6,7 @@ import { editableRoot, EditableSurface, FieldSurface, Surface } from './surfaces
 import type { CheckResponse, Issue, Settings } from './types';
 
 const DEBOUNCE_MS = 300;
+const AI_IDLE_MS = 1200;
 const COLORS: Record<string, string> = {
   spelling: '#e5484d',
   grammar: '#3e63dd',
@@ -30,8 +31,6 @@ const STYLE = `
 .card .act { background: transparent; color: #60646c; padding: 2px 6px; font-size: 12px; }
 .card .act:hover { background: #f0f0f3; }
 .card .brand { margin-left: auto; color: #b9bbc6; font-size: 11px; align-self: center; }
-.card .rw { display: block; width: 100%; text-align: left; background: #f0f0f3; color: inherit; margin-bottom: 6px; padding: 6px 8px; }
-.card .rw:hover, .card .rw:focus-visible { background: #e0e1e6; outline: none; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (prefers-color-scheme: dark) {
   .card { background: #1c1d21; color: #edeef0; box-shadow: 0 8px 30px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.08); }
@@ -39,8 +38,6 @@ const STYLE = `
   .card .actions { border-color: #2e3135; }
   .card .act { color: #b0b4ba; }
   .card .act:hover { background: #2e3135; }
-  .card .rw { background: #2e3135; }
-  .card .rw:hover, .card .rw:focus-visible { background: #3a3f44; }
 }
 `;
 
@@ -138,14 +135,19 @@ class Controller {
     }
     this.issues = res.issues.filter((i) => !ignored.has(`${i.rule}|${i.text}`));
     this.render();
-    if (settings?.deepCheck) this.deepCheck(text, id);
+    if (settings?.aiCheck) {
+      // The model is slower than the engine: wait until typing pauses (~1.5 s total) before asking it.
+      window.setTimeout(() => {
+        if (id === this.seq) this.aiCheck(text, id);
+      }, AI_IDLE_MS);
+    }
   }
 
-  /** Pro: merge AI findings that don't overlap what the local engine already found. */
-  private async deepCheck(text: string, id: number) {
+  /** Merge on-device AI findings that don't overlap what the engine already found. */
+  private async aiCheck(text: string, id: number) {
     let res: CheckResponse;
     try {
-      res = await api.runtime.sendMessage({ type: 'deepCheck', text });
+      res = await api.runtime.sendMessage({ type: 'aiCheck', text });
     } catch {
       return;
     }
@@ -240,51 +242,6 @@ function hideCard() {
   cardOwner = null;
 }
 
-/** Bounds of the sentence containing `offset`. */
-function sentenceAround(text: string, offset: number): [number, number] {
-  let start = offset;
-  while (start > 0 && !/[.!?\n]/.test(text[start - 1])) start--;
-  while (start < offset && /\s/.test(text[start])) start++;
-  let end = offset;
-  while (end < text.length && !/[.!?\n]/.test(text[end])) end++;
-  if (end < text.length && text[end] !== '\n') end++;
-  return [start, end];
-}
-
-async function showRewrites(ctrl: Controller, c: HTMLDivElement, at: number) {
-  const text = ctrl.surface.getText();
-  const [s, e] = sentenceAround(text, at);
-  const sentence = text.slice(s, e);
-  const body = document.createElement('div');
-  body.className = 'msg';
-  body.textContent = 'Rewriting\u2026';
-  c.replaceChildren(body);
-  announce('Rewriting sentence');
-  const res = await api.runtime.sendMessage({ type: 'rewrite', text: sentence, goal: 'clearer' }).catch(() => ({ error: 'unavailable' }));
-  if (card !== c) return;
-  if (!res || 'error' in res || !res.rewrites?.length) {
-    body.textContent = 'Couldn\u2019t get a rewrite right now.';
-    return;
-  }
-  body.textContent = 'Pick a version:';
-  for (const r of res.rewrites as string[]) {
-    const b = document.createElement('button');
-    b.className = 'rw';
-    b.textContent = r;
-    b.addEventListener('mousedown', (ev) => ev.preventDefault());
-    b.addEventListener('click', () => {
-      hideCard();
-      if (ctrl.surface.getText().slice(s, e) === sentence) {
-        ctrl.surface.replace(s, e, r);
-        api.runtime.sendMessage({ type: 'accepted', rule: 'AI_REWRITE' }).catch(() => {});
-      }
-    });
-    c.append(b);
-  }
-  (c.querySelector('.rw') as HTMLButtonElement | null)?.focus();
-  announce(`${res.rewrites.length} rewrites available`);
-}
-
 function showCard(ctrl: Controller, issue: Issue, focusFirst: boolean) {
   hideCard();
   mount();
@@ -340,14 +297,6 @@ function showCard(ctrl: Controller, issue: Issue, focusFirst: boolean) {
       for (const ct of controllers.values()) ct.check();
     });
     actions.append(add);
-  }
-  if (settings?.deepCheck) {
-    const improve = document.createElement('button');
-    improve.className = 'act';
-    improve.textContent = 'Improve sentence';
-    improve.addEventListener('mousedown', (ev) => ev.preventDefault());
-    improve.addEventListener('click', () => showRewrites(ctrl, c, issue.offset));
-    actions.append(improve);
   }
   const brand = document.createElement('span');
   brand.className = 'brand';

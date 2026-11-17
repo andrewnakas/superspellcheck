@@ -1,0 +1,5 @@
+{
+  "system": "Correct the spelling, grammar and punctuation of the user's sentence. Change as little as possible and keep the writer's wording and style. Reply with the corrected sentence only. If it is already correct, repeat it unchanged.",
+  "template": "<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{src}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+  "stop": "<|im_end|>"
+}

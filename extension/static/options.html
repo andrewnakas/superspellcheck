@@ -29,14 +29,11 @@
   </section>
 
   <section>
-    <h2>AI deep check <span class="badge">Pro</span></h2>
-    <p class="hint">Catches subtler grammar and clarity problems. When this is on, paragraphs you type are sent over an encrypted connection to the SuperSpellCheck server for checking. They are not stored.</p>
-    <label class="row"><input type="checkbox" id="deep"> Use AI deep check</label>
-    <label class="row">API key <input id="apikey" type="password" autocomplete="off" placeholder="ssc_..."></label>
-    <details><summary>Advanced</summary>
-      <label class="row">Server <input id="apibase" type="url"></label>
-    </details>
-    <p id="deepstatus" class="hint" role="status"></p>
+    <h2>AI deep check <span class="badge">Free</span></h2>
+    <p class="hint">A small AI model catches subtler grammar mistakes. It runs on your device like everything else, so your text still never leaves your browser. Turning it on downloads the model once (about 570 MB).</p>
+    <label class="row"><input type="checkbox" id="ai"> Use the on-device AI model</label>
+    <p id="aistatus" class="hint" role="status" aria-live="polite"></p>
+    <button type="button" id="airemove" class="link">Remove the downloaded model</button>
   </section>
 
   <section>

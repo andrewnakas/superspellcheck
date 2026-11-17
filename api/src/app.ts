@@ -1,14 +1,9 @@
-// HTTP API for the Pro tier. Privacy rules: text is never logged or stored;
-// only counts and latencies are recorded.
-import Anthropic from '@anthropic-ai/sdk';
+// Account and billing API. Checking itself runs entirely on the user's device
+// (Rust engine + on-device Qwen model); no user text is ever sent here.
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { locate } from './locate.ts';
-import { deepCheck, isGoal, RefusedError, rewrite, type Client } from './llm.ts';
 import { billingConfigFromEnv, billingRoutes, type BillingConfig } from './billing.ts';
 import type { AccountStore } from './db.ts';
-
-export const MAX_CHARS = 8000;
 
 export interface Account {
   id: string;
@@ -56,8 +51,7 @@ export class RateLimiter {
   }
 }
 
-export function createApp(opts: { client?: Client; keys?: KeyStore; limiter?: RateLimiter; accounts?: AccountStore; billing?: BillingConfig | null } = {}) {
-  const client = opts.client ?? new Anthropic();
+export function createApp(opts: { keys?: KeyStore; limiter?: RateLimiter; accounts?: AccountStore; billing?: BillingConfig | null } = {}) {
   const accounts = opts.accounts;
   // Paid accounts (SQLite) first, then static dev keys from SSC_API_KEYS.
   const envKeys = new EnvKeyStore();
@@ -80,41 +74,6 @@ export function createApp(opts: { client?: Client; keys?: KeyStore; limiter?: Ra
     await next();
   });
 
-  const readText = async (c: any): Promise<{ text: string; body: any } | Response> => {
-    let body: any;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: 'invalid_json' }, 400);
-    }
-    const text = body?.text;
-    if (typeof text !== 'string' || !text.trim()) return c.json({ error: 'text_required' }, 400);
-    if (text.length > MAX_CHARS) return c.json({ error: 'text_too_long', max: MAX_CHARS }, 413);
-    return { text, body };
-  };
-
-  const fail = (c: any, err: unknown) => {
-    if (err instanceof RefusedError) return c.json({ error: 'declined' }, 422);
-    if (err instanceof Anthropic.RateLimitError) return c.json({ error: 'upstream_busy' }, 503);
-    if (err instanceof Anthropic.APIError) return c.json({ error: 'upstream_error', status: err.status }, 502);
-    console.error('deep check failed:', err instanceof Error ? err.name : 'unknown');
-    return c.json({ error: 'internal' }, 500);
-  };
-
-  app.post('/v1/check', async (c) => {
-    const r = await readText(c);
-    if (r instanceof Response) return r;
-    if (accounts && !accounts.meter(c.get('account'), r.text.length)) return c.json({ error: 'monthly_limit_reached' }, 402);
-    const t0 = Date.now();
-    try {
-      const issues = locate(r.text, await deepCheck(client, r.text));
-      console.log(JSON.stringify({ route: 'check', account: c.get('account').id, chars: r.text.length, issues: issues.length, ms: Date.now() - t0 }));
-      return c.json({ issues });
-    } catch (err) {
-      return fail(c, err);
-    }
-  });
-
   app.get('/v1/account', (c) => {
     const a = c.get('account');
     const usage = accounts?.usage(a.id);
@@ -126,19 +85,6 @@ export function createApp(opts: { client?: Client; keys?: KeyStore; limiter?: Ra
     const auth = c.req.header('authorization') ?? '';
     const key = accounts.rotateKey(auth.slice(7).trim());
     return key ? c.json({ key }) : c.json({ error: 'invalid_api_key' }, 401);
-  });
-
-  app.post('/v1/rewrite', async (c) => {
-    const r = await readText(c);
-    if (r instanceof Response) return r;
-    const goal = String(r.body.goal ?? 'clearer');
-    if (!isGoal(goal)) return c.json({ error: 'invalid_goal' }, 400);
-    if (accounts && !accounts.meter(c.get('account'), r.text.length)) return c.json({ error: 'monthly_limit_reached' }, 402);
-    try {
-      return c.json({ rewrites: await rewrite(client, r.text, goal) });
-    } catch (err) {
-      return fail(c, err);
-    }
   });
 
   return app;
