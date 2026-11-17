@@ -1,0 +1,351 @@
+// Content script: attaches to editable fields, asks the background engine to
+// check their text and draws underlines + a suggestion card in a shadow-DOM
+// overlay that never touches the page's own DOM.
+import { api } from './storage';
+import { editableRoot, EditableSurface, FieldSurface, Surface } from './surfaces';
+import type { CheckResponse, Issue, Settings } from './types';
+
+const DEBOUNCE_MS = 300;
+const COLORS: Record<string, string> = {
+  spelling: '#e5484d',
+  grammar: '#3e63dd',
+  punctuation: '#f5a524',
+  capitalization: '#f5a524',
+  word_choice: '#8e4ec6',
+};
+
+const STYLE = `
+:host { all: initial; }
+.layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483647; overflow: hidden; }
+.u { position: fixed; height: 2px; border-radius: 1px; pointer-events: none; opacity: .9; }
+.card { position: fixed; pointer-events: auto; min-width: 220px; max-width: 340px; background: #fff; color: #1c2024;
+  border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.06);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 10px 12px; z-index: 2147483647; }
+.card .msg { color: #60646c; font-size: 13px; margin-bottom: 8px; }
+.card .sugs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.card button { font: inherit; cursor: pointer; border: 0; border-radius: 6px; padding: 4px 10px; }
+.card .sug { background: #3e63dd; color: #fff; font-weight: 600; }
+.card .sug:focus-visible, .card .sug:hover { background: #3358d4; outline: none; }
+.card .actions { display: flex; gap: 6px; border-top: 1px solid #e8e8ec; padding-top: 8px; }
+.card .act { background: transparent; color: #60646c; padding: 2px 6px; font-size: 12px; }
+.card .act:hover { background: #f0f0f3; }
+.card .brand { margin-left: auto; color: #b9bbc6; font-size: 11px; align-self: center; }
+@media (prefers-color-scheme: dark) {
+  .card { background: #1c1d21; color: #edeef0; box-shadow: 0 8px 30px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.08); }
+  .card .msg { color: #b0b4ba; }
+  .card .actions { border-color: #2e3135; }
+  .card .act { color: #b0b4ba; }
+  .card .act:hover { background: #2e3135; }
+}
+`;
+
+// ---------------------------------------------------------------- overlay
+
+const host = document.createElement('ssc-overlay');
+const shadow = host.attachShadow({ mode: 'open' });
+const style = document.createElement('style');
+style.textContent = STYLE;
+const layer = document.createElement('div');
+layer.className = 'layer';
+shadow.append(style, layer);
+let mounted = false;
+function mount() {
+  if (!mounted || !host.isConnected) {
+    document.documentElement.appendChild(host);
+    mounted = true;
+  }
+}
+
+// ---------------------------------------------------------------- state
+
+let settings: Settings | null = null;
+const ignored = new Set<string>(); // "rule|text" ignored for this page session
+const controllers = new Map<HTMLElement, Controller>();
+
+class Controller {
+  surface: Surface;
+  issues: Issue[] = [];
+  private underlines: HTMLDivElement[] = [];
+  private timer = 0;
+  private seq = 0;
+  private composing = false;
+  private resizeObs: ResizeObserver;
+
+  constructor(public el: HTMLElement) {
+    this.surface = el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement ? new FieldSurface(el, layer) : new EditableSurface(el);
+    if (settings?.replaceNativeSpellcheck && el.spellcheck) {
+      el.setAttribute('data-ssc-native', el.getAttribute('spellcheck') ?? '');
+      el.spellcheck = false;
+    }
+    el.addEventListener('input', this.onInput);
+    el.addEventListener('compositionstart', this.onCompStart);
+    el.addEventListener('compositionend', this.onCompEnd);
+    el.addEventListener('scroll', this.render, { passive: true });
+    el.addEventListener('mouseup', this.onCaret);
+    el.addEventListener('keyup', this.onKey);
+    this.resizeObs = new ResizeObserver(() => this.render());
+    this.resizeObs.observe(el);
+    this.check();
+  }
+
+  private onInput = () => {
+    hideCard();
+    this.clearUnderlines(); // text moved; stale underlines would be misplaced
+    window.clearTimeout(this.timer);
+    if (!this.composing) this.timer = window.setTimeout(() => this.check(), DEBOUNCE_MS);
+  };
+  private onCompStart = () => (this.composing = true);
+  private onCompEnd = () => {
+    this.composing = false;
+    this.onInput();
+  };
+  private onCaret = () => window.setTimeout(() => this.openCardAtCaret(false), 0);
+  private onKey = (e: KeyboardEvent) => {
+    // Alt+Enter (Option+Enter on Mac) opens suggestions for the issue at the caret
+    if (e.key === 'Enter' && e.altKey) this.openCardAtCaret(true);
+  };
+
+  async check() {
+    const text = this.surface.getText();
+    const id = ++this.seq;
+    if (!text.trim()) {
+      this.issues = [];
+      this.render();
+      return;
+    }
+    let res: CheckResponse;
+    try {
+      res = await api.runtime.sendMessage({ type: 'check', text });
+    } catch {
+      return; // extension reloaded / context invalidated
+    }
+    if (id !== this.seq || this.surface.getText() !== text) return; // stale
+    if ('error' in res) {
+      console.warn('[ssc]', res.error);
+      return;
+    }
+    this.issues = res.issues.filter((i) => !ignored.has(`${i.rule}|${i.text}`));
+    this.render();
+  }
+
+  private clearUnderlines() {
+    for (const u of this.underlines) u.remove();
+    this.underlines = [];
+  }
+
+  render = () => {
+    this.clearUnderlines();
+    if (!this.el.isConnected || !this.issues.length) return;
+    mount();
+    const clip = this.surface.clipRect();
+    const rects = this.surface.rectsFor(this.issues.map((i) => [i.offset, i.offset + i.length]));
+    rects.forEach((rs, k) => {
+      const color = COLORS[this.issues[k].category] ?? COLORS.spelling;
+      for (const r of rs) {
+        const bottom = r.bottom - 1;
+        if (bottom < clip.top || bottom > clip.bottom + 1 || r.right < clip.left || r.left > clip.right) continue;
+        const left = Math.max(r.left, clip.left);
+        const right = Math.min(r.right, clip.right);
+        const u = document.createElement('div');
+        u.className = 'u';
+        u.style.cssText = `left:${left}px;top:${bottom}px;width:${right - left}px;background:${color}`;
+        u.dataset.rule = this.issues[k].rule;
+        layer.appendChild(u);
+        this.underlines.push(u);
+      }
+    });
+  };
+
+  issueAt(offset: number): Issue | undefined {
+    return this.issues.find((i) => offset >= i.offset && offset <= i.offset + i.length);
+  }
+
+  openCardAtCaret(focusFirst: boolean) {
+    const off = this.surface.caretOffset();
+    if (off == null) return;
+    const issue = this.issueAt(off);
+    if (issue) showCard(this, issue, focusFirst);
+    else hideCard();
+  }
+
+  apply(issue: Issue, replacement: string) {
+    // Re-validate: the text may have changed since the check.
+    const text = this.surface.getText();
+    if (text.slice(issue.offset, issue.offset + issue.length) !== issue.text) return this.check();
+    this.surface.replace(issue.offset, issue.offset + issue.length, replacement);
+    const delta = replacement.length - issue.length;
+    this.issues = this.issues.filter((i) => i !== issue).map((i) => (i.offset > issue.offset ? { ...i, offset: i.offset + delta } : i));
+    this.render();
+  }
+
+  destroy() {
+    window.clearTimeout(this.timer);
+    this.clearUnderlines();
+    this.resizeObs.disconnect();
+    this.el.removeEventListener('input', this.onInput);
+    this.el.removeEventListener('compositionstart', this.onCompStart);
+    this.el.removeEventListener('compositionend', this.onCompEnd);
+    this.el.removeEventListener('scroll', this.render);
+    this.el.removeEventListener('mouseup', this.onCaret);
+    this.el.removeEventListener('keyup', this.onKey);
+    if (this.el.hasAttribute('data-ssc-native')) {
+      const prev = this.el.getAttribute('data-ssc-native');
+      if (prev) this.el.setAttribute('spellcheck', prev);
+      else this.el.removeAttribute('spellcheck');
+      this.el.removeAttribute('data-ssc-native');
+    }
+    this.surface.destroy();
+  }
+}
+
+// ---------------------------------------------------------------- card
+
+let card: HTMLDivElement | null = null;
+
+function hideCard() {
+  card?.remove();
+  card = null;
+}
+
+function showCard(ctrl: Controller, issue: Issue, focusFirst: boolean) {
+  hideCard();
+  mount();
+  const rects = ctrl.surface.rectsFor([[issue.offset, issue.offset + issue.length]])[0];
+  const anchor = rects[rects.length - 1];
+  if (!anchor) return;
+  const c = document.createElement('div');
+  c.className = 'card';
+  c.setAttribute('role', 'dialog');
+  c.setAttribute('aria-label', 'Writing suggestion');
+  const msg = document.createElement('div');
+  msg.className = 'msg';
+  msg.textContent = issue.message;
+  c.append(msg);
+  if (issue.replacements.length) {
+    const sugs = document.createElement('div');
+    sugs.className = 'sugs';
+    for (const rep of issue.replacements.slice(0, 5)) {
+      const b = document.createElement('button');
+      b.className = 'sug';
+      b.textContent = rep === '' ? '(delete)' : rep;
+      b.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus in the editor
+      b.addEventListener('click', () => {
+        hideCard();
+        ctrl.apply(issue, rep);
+      });
+      sugs.append(b);
+    }
+    c.append(sugs);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  const ignore = document.createElement('button');
+  ignore.className = 'act';
+  ignore.textContent = 'Ignore';
+  ignore.addEventListener('click', () => {
+    ignored.add(`${issue.rule}|${issue.text}`);
+    for (const ct of controllers.values()) {
+      ct.issues = ct.issues.filter((i) => !(i.rule === issue.rule && i.text === issue.text));
+      ct.render();
+    }
+    hideCard();
+  });
+  actions.append(ignore);
+  if (issue.category === 'spelling') {
+    const add = document.createElement('button');
+    add.className = 'act';
+    add.textContent = 'Add to dictionary';
+    add.addEventListener('click', async () => {
+      hideCard();
+      await api.runtime.sendMessage({ type: 'addWord', word: issue.text });
+      for (const ct of controllers.values()) ct.check();
+    });
+    actions.append(add);
+  }
+  const brand = document.createElement('span');
+  brand.className = 'brand';
+  brand.textContent = 'SuperSpellCheck';
+  actions.append(brand);
+  c.append(actions);
+  layer.append(c);
+  // place below the word, flip above if there is no room
+  const cr = c.getBoundingClientRect();
+  let top = anchor.bottom + 6;
+  if (top + cr.height > window.innerHeight - 8) top = anchor.top - cr.height - 6;
+  const left = Math.min(Math.max(8, anchor.left), window.innerWidth - cr.width - 8);
+  c.style.left = `${left}px`;
+  c.style.top = `${Math.max(8, top)}px`;
+  card = c;
+  if (focusFirst) (c.querySelector('button') as HTMLButtonElement | null)?.focus();
+  c.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      hideCard();
+      ctrl.el.focus();
+    }
+  });
+}
+
+// ---------------------------------------------------------------- wiring
+
+function siteDisabled(s: Settings) {
+  return !s.enabled || s.disabledSites.includes(location.hostname);
+}
+
+function attach(target: EventTarget | null) {
+  if (!settings || siteDisabled(settings)) return;
+  const root = editableRoot(target);
+  if (!root || controllers.has(root)) return;
+  controllers.set(root, new Controller(root));
+}
+
+function rerenderAll() {
+  for (const [el, c] of controllers) {
+    if (!el.isConnected) {
+      c.destroy();
+      controllers.delete(el);
+    } else c.render();
+  }
+}
+
+let raf = 0;
+function scheduleRender() {
+  if (raf) return;
+  raf = requestAnimationFrame(() => {
+    raf = 0;
+    rerenderAll();
+    hideCard();
+  });
+}
+
+async function start() {
+  try {
+    settings = await api.runtime.sendMessage({ type: 'getSettings' });
+  } catch {
+    return;
+  }
+  document.addEventListener('focusin', (e) => attach(e.composedPath()[0] ?? e.target), true);
+  if (document.activeElement) attach(document.activeElement);
+  window.addEventListener('scroll', scheduleRender, { capture: true, passive: true });
+  window.addEventListener('resize', scheduleRender, { passive: true });
+  document.addEventListener('keydown', (e) => {
+    if (card && e.key === 'Escape') {
+      e.stopPropagation();
+      hideCard();
+    }
+  }, true);
+  document.addEventListener('mousedown', (e) => {
+    if (card && !e.composedPath().includes(card)) hideCard();
+  }, true);
+  api.storage.onChanged.addListener((changes) => {
+    if (!changes.settings) return;
+    settings = { ...settings!, ...changes.settings.newValue };
+    for (const [el, c] of controllers) {
+      if (siteDisabled(settings!)) {
+        c.destroy();
+        controllers.delete(el);
+      } else c.check();
+    }
+  });
+}
+
+start();

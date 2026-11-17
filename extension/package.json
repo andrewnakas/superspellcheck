@@ -1,0 +1,17 @@
+{
+  "name": "superspellcheck-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "wasm": "cd ../engine && wasm-pack build --release --target web --out-dir ../extension/pkg --no-default-features --features wasm",
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "node test/e2e.mjs"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.0.287",
+    "esbuild": "0.25.0",
+    "typescript": "5.7.3"
+  }
+}

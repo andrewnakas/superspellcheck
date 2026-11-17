@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SuperSpellCheck settings</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<main>
+  <h1>SuperSpellCheck</h1>
+  <p class="lede">Spelling and grammar checks run on your device. Your text never leaves the browser.</p>
+
+  <section>
+    <label class="row"><input type="checkbox" id="enabled"> Check my writing</label>
+    <label class="row"><input type="checkbox" id="native"> Turn off the browser's built-in spellcheck in fields SuperSpellCheck handles</label>
+  </section>
+
+  <section>
+    <h2>Sensitivity</h2>
+    <p class="hint">Higher sensitivity catches more but may flag things that are fine.</p>
+    <input type="range" id="sensitivity" min="0" max="2" step="1" aria-label="Sensitivity">
+    <div class="scale"><span>Fewer, surer</span><span>Balanced</span><span>Catch everything</span></div>
+  </section>
+
+  <section>
+    <h2>Checks</h2>
+    <div id="rules"></div>
+  </section>
+
+  <section>
+    <h2>Personal dictionary</h2>
+    <form id="addform" class="row"><input id="newword" placeholder="Add a word" autocomplete="off"><button>Add</button></form>
+    <ul id="dict" class="list"></ul>
+  </section>
+
+  <section>
+    <h2>Turned off on these sites</h2>
+    <ul id="sites" class="list"></ul>
+  </section>
+</main>
+<script src="options.js" type="module"></script>
+</body>
+</html>
