@@ -75,3 +75,14 @@ On-device-first keeps marginal cost of free users near zero.
 
 ## First implementation step after approval
 Scaffold monorepo (`engine/`, `extension/`, `bench/`), build the benchmark harness with baselines, then the Rust SymSpell + WASM spike loaded in a minimal WXT extension on a textarea.
+
+## Status (2026-11-17)
+
+| Phase | State | Notes |
+|---|---|---|
+| 0: Foundations | Done | Monorepo, CI (`.github/workflows/ci.yml`), `bench/` against Hunspell and Aspell with a regression gate |
+| 1: Spelling engine | Done | Rust SymSpell, keyboard and phonetic error model, bigram LM reranking, WASM build (0.6 s cold start, about 15 ms per check) |
+| 2: Extension MVP | Done | Chrome and Firefox MV3 builds, textarea, input and contenteditable surfaces, card, dictionary, options and popup, Playwright E2E (10 tests), web-ext lint clean |
+| 3: Local grammar | Partly done | Rule engine and real-word confusion detection, grammar test set at 86.7% exact fix with 0 false alarms. **Not done:** the ONNX GEC model, which needs training data and a GPU. The Pro LLM deep check covers subtle grammar for now. **Google Docs** draws text on a canvas, so it needs Google to allowlist the extension for annotated canvas. |
+| 4: Cloud and accounts | Done (needs credentials) | `api/`: Claude deep check and rewrites with server-side edit validation, SQLite accounts, Stripe Checkout, webhooks and portal, metering. Live runs need `ANTHROPIC_API_KEY` and Stripe keys. |
+| 5: Polish and launch | Partly done | Done: learning from dismissed suggestions, screen-reader announcements and keyboard navigation, store zips, privacy policy draft, landing page (`web/`). **Blocked:** store developer accounts, the Safari build (needs Xcode on macOS), a domain and hosting. |

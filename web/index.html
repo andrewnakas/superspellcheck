@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SuperSpellCheck</title>
+<meta name="description" content="Private, context-aware spelling and grammar checking that runs on your device.">
+<link rel="icon" href="icon.png">
+<style>
+:root { --bg: #fcfcfd; --fg: #1c2024; --muted: #60646c; --line: #e8e8ec; --accent: #3e63dd; --card: #fff; }
+@media (prefers-color-scheme: dark) { :root { --bg: #111113; --fg: #edeef0; --muted: #b0b4ba; --line: #2e3135; --accent: #8da4ef; --card: #18191b; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 880px; margin: 0 auto; padding: 0 16px 64px; }
+header { display: flex; align-items: center; gap: 10px; padding: 20px 0; font-weight: 700; }
+header img { width: 28px; height: 28px; }
+h1 { font-size: clamp(32px, 6vw, 52px); line-height: 1.1; margin: 48px 0 16px; letter-spacing: -0.02em; }
+.lede { font-size: 20px; color: var(--muted); max-width: 640px; }
+.cta { display: inline-block; margin: 20px 12px 0 0; padding: 12px 20px; border-radius: 10px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
+.cta.secondary { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+.demo { margin: 40px 0; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); font-size: 18px; }
+.u { text-decoration: underline wavy; text-underline-offset: 4px; text-decoration-thickness: 1.5px; }
+.sp { text-decoration-color: #e5484d; } .gr { text-decoration-color: #3e63dd; } .wc { text-decoration-color: #8e4ec6; }
+.demo small { display: block; color: var(--muted); margin-top: 10px; font-size: 14px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 32px 0; }
+.grid div { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: var(--card); }
+.grid h3 { margin: 0 0 6px; font-size: 17px; }
+.grid p { margin: 0; color: var(--muted); font-size: 15px; }
+h2 { margin-top: 56px; font-size: 28px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+td:not(:first-child), th:not(:first-child) { text-align: right; }
+td strong { color: var(--accent); }
+.note { color: var(--muted); font-size: 14px; }
+.pricing { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.pricing div { border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: var(--card); }
+.price { font-size: 30px; font-weight: 700; }
+.pricing ul { padding-left: 18px; color: var(--muted); font-size: 15px; }
+footer { color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); margin-top: 64px; padding-top: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <header><img src="icon.png" alt=""> SuperSpellCheck</header>
+
+  <h1>The spell checker that reads the whole sentence.</h1>
+  <p class="lede">SuperSpellCheck fixes typos using the words around them, catches correctly spelled wrong words that other checkers miss, and stays quiet when your writing is fine. It runs on your device, so your text stays private.</p>
+  <a class="cta" href="#install">Add to your browser, free</a>
+  <a class="cta secondary" href="#benchmark">See the benchmark</a>
+
+  <div class="demo" aria-label="Example">
+    I got a letter <span class="u wc">form</span> the bank about my <span class="u sp">acount</span>. It <span class="u gr">don't</span> make sense, so I should <span class="u gr">of</span> called them.
+    <small>Each underline here is a real result. “form” → “from” and “don't” → “doesn't” are spelled correctly, so a dictionary checker like Chrome's misses them.</small>
+  </div>
+
+  <div class="grid">
+    <div><h3>Private by default</h3><p>The engine is compiled to WebAssembly and runs inside the extension. Nothing you type leaves your browser.</p></div>
+    <div><h3>Context-aware</h3><p>A language model ranks corrections by how well they fit the sentence, not just by how close they are to what you typed.</p></div>
+    <div><h3>Quiet</h3><p>Names, code, URLs and @mentions are left alone. Ignore a suggestion twice and you won't see it again.</p></div>
+    <div><h3>Works where you write</h3><p>Text areas, rich editors, email and comment boxes, in Chrome, Edge, Firefox and Safari.</p></div>
+  </div>
+
+  <h2 id="benchmark">Benchmark</h2>
+  <p>We publish our numbers. Hunspell is the engine behind Chrome's built-in spell checker. Anyone can reproduce these with <code>bench/run.py</code> in our repository.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Task</th><th>SuperSpellCheck</th><th>Hunspell (Chrome)</th><th>Aspell</th></tr></thead>
+    <tbody>
+      <tr><td>Typos in real sentences, right fix first</td><td><strong>71.5%</strong></td><td>29.7%</td><td>31.3%</td></tr>
+      <tr><td>Wikipedia's list of common misspellings</td><td><strong>82.0%</strong></td><td>75.3%</td><td>80.7%</td></tr>
+      <tr><td>Children's writing (Holbrook corpus)</td><td><strong>29.7%</strong></td><td>15.4%</td><td>23.0%</td></tr>
+      <tr><td>Right word, wrong place (“form” for “from”) caught</td><td><strong>76%</strong></td><td>0%</td><td>0%</td></tr>
+      <tr><td>Grammar test set, exact fix</td><td><strong>86.7%</strong></td><td>0%</td><td>0%</td></tr>
+      <tr><td>False alarms per 1,000 words of clean prose (lower is better)</td><td><strong>7.6</strong></td><td>12.9</td><td>16.7</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">Corpora: Birkbeck spelling error corpus and Peter Norvig's public-domain text corpus. Each push to our repository re-runs the benchmark and fails if results get worse.</p>
+
+  <h2 id="pricing">Pricing</h2>
+  <div class="pricing">
+    <div><div>Free</div><div class="price">$0</div><ul><li>On-device spelling and grammar</li><li>Personal dictionary, synced by your browser</li><li>Works offline</li></ul></div>
+    <div><div>Pro</div><div class="price">$10<span class="note">/month</span></div><ul><li>Everything in Free</li><li>AI deep check for subtle grammar and clarity</li><li>One-click sentence rewrites</li></ul></div>
+    <div><div>Teams</div><div class="price">Contact us</div><ul><li>Shared dictionaries and style rules</li><li>Admin controls and SSO</li><li>Higher usage limits</li></ul></div>
+  </div>
+
+  <h2 id="install">Install</h2>
+  <p>Store listings are coming soon. Until then, build from source and load the unpacked extension. Steps are in the README.</p>
+
+  <footer>SuperSpellCheck · <a href="../PRIVACY.md">Privacy</a></footer>
+</main>
+</body>
+</html>
