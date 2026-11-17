@@ -22,3 +22,7 @@ wasm = ["dep:wasm-bindgen"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 wasm-bindgen = { version = "0.2", optional = true }
+
+[package.metadata.wasm-pack.profile.release]
+# wasm-opt is run separately (npm binaryen) so builds don't depend on a GitHub download
+wasm-opt = false

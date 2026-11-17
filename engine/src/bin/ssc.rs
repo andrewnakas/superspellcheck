@@ -2,7 +2,8 @@
 //!
 //!   ssc check [--data DIR] [--all] [TEXT]     check TEXT (or stdin), print JSON issues
 //!   ssc suggest [--data DIR] WORD [PREV] [NEXT]
-//!   ssc batch [--data DIR]                     one word per stdin line -> "word<TAB>s1,s2,..."
+//!   ssc batch [--data DIR]                     word[<TAB>prev<TAB>next] per stdin line -> "word<TAB>ok|bad<TAB>s1,s2,..."
+//!   ssc jsonl [--data DIR] [--all]             JSON string per stdin line -> JSON issue array per line
 
 use ssc_engine::{CheckOptions, Ctx, Engine};
 use std::io::{BufRead, Read};
@@ -26,10 +27,12 @@ fn main() {
     }
     let cmd = args.first().cloned().unwrap_or_else(|| "check".into());
     let t0 = std::time::Instant::now();
-    let engine = Engine::from_dir(&data).unwrap_or_else(|e| {
+    let mut engine = Engine::from_dir(&data).unwrap_or_else(|e| {
         eprintln!("failed to load data from {}: {}", data.display(), e);
         std::process::exit(2)
     });
+    if let Ok(a) = std::env::var("SSC_ALPHA") { engine.weights.alpha = a.parse().unwrap(); }
+    if let Ok(b) = std::env::var("SSC_BETA") { engine.weights.beta = b.parse().unwrap(); }
     eprintln!("loaded in {:?} ({} index entries)", t0.elapsed(), engine.index_size());
     match cmd.as_str() {
         "check" => {
@@ -62,6 +65,15 @@ fn main() {
                 let valid = engine.is_valid(word);
                 let sugg: Vec<String> = if valid { vec![] } else { engine.suggest(word, Ctx { prev, next }, 10).into_iter().map(|s| s.word).collect() };
                 println!("{}\t{}\t{}", word, if valid { "ok" } else { "bad" }, sugg.join(","));
+            }
+        }
+        "jsonl" => {
+            // one JSON string per stdin line -> one JSON array of issues per line
+            let opts = CheckOptions { min_confidence: if all { 0.0 } else { 0.5 }, ..Default::default() };
+            let stdin = std::io::stdin();
+            for line in stdin.lock().lines() {
+                let text: String = serde_json::from_str(&line.unwrap()).unwrap_or_default();
+                println!("{}", serde_json::to_string(&engine.check_with(&text, &opts)).unwrap());
             }
         }
         other => {

@@ -80,7 +80,7 @@ pub struct Weights {
 
 impl Default for Weights {
     fn default() -> Self {
-        Weights { alpha: 6.0, beta: 1.0 }
+        Weights { alpha: 12.0, beta: 1.5 }
     }
 }
 
@@ -115,7 +115,15 @@ impl Engine {
     /// Load from the repository's `data/` directory.
     pub fn from_dir(dir: &std::path::Path) -> std::io::Result<Self> {
         let r = |f: &str| std::fs::read_to_string(dir.join(f));
-        Ok(Self::new(&r("lexicon.txt")?, &r("unigrams.txt")?, &r("bigrams.txt")?))
+        let mut e = Self::new(&r("lexicon.txt")?, &r("unigrams.txt")?, &r("bigrams.txt")?);
+        if let Ok(v) = r("lexicon_variants.txt") {
+            e.add_variants(&v);
+        }
+        Ok(e)
+    }
+
+    pub fn add_variants(&mut self, list: &str) {
+        self.lm.add_variants(list);
     }
 
     pub fn add_word(&mut self, w: &str) {
@@ -157,6 +165,8 @@ impl Engine {
         let lower = normalize_apostrophes(&word.to_lowercase());
         let chars: Vec<char> = lower.chars().collect();
         let max_d = if chars.len() >= 9 { 3 } else { 2 };
+        let typed_all_caps = word.chars().filter(|c| c.is_alphabetic()).count() > 1 && word.chars().filter(|c| c.is_alphabetic()).all(|c| c.is_uppercase());
+        let typed_lower = word.chars().next().map_or(false, |c| c.is_lowercase());
         let mut seen: HashMap<u32, ()> = HashMap::new();
         let mut out: Vec<Suggestion> = Vec::new();
         let w = self.weights;
@@ -172,8 +182,19 @@ impl Engine {
             if osa_distance(&chars, &cc, max_d) > max_d {
                 continue;
             }
+            let ci = &self.lm.case[id as usize];
+            let mut prior = 0.0;
+            if !ci.lower_ok {
+                let acronym_only = ci.cased.iter().all(|c| c.chars().filter(|x| x.is_alphabetic()).all(|x| x.is_uppercase()));
+                if acronym_only && !typed_all_caps {
+                    continue; // never turn "ot" into "OT"
+                }
+                if typed_lower {
+                    prior -= 2.0; // proper noun suggested for a lowercase word: possible but less likely
+                }
+            }
             let cost = errmodel::weighted_distance(&lower, cand);
-            let score = -w.alpha * cost as f64 + w.beta * self.seq_score(&[cand.as_str()], ctx);
+            let score = -w.alpha * cost as f64 + w.beta * self.seq_score(&[cand.as_str()], ctx) + prior;
             out.push(Suggestion { word: cand.clone(), score, cost });
         }
         // Run-on words: "alot" -> "a lot", "infront" -> "in front"
@@ -297,7 +318,7 @@ impl Engine {
                     let best_cost = sugg.first().map_or(9.0, |s| s.cost);
                     let confidence: f32 = if maybe_name {
                         // Names are the #1 source of false alarms. Only flag obvious typos.
-                        if best_cost <= 0.6 && top_p > 0.6 { 0.6 } else { 0.3 }
+                        if best_cost <= 0.35 && top_p > 0.7 { 0.6 } else { 0.3 }
                     } else {
                         0.95
                     };
@@ -358,7 +379,8 @@ impl Engine {
                 if !attested_left && !attested_right {
                     continue;
                 }
-                let gain = self.seq_score(&seq, ctx) - orig - confusion::switch_penalty(&lower, alt);
+                let one_sided = ctx.prev.is_none() || ctx.next.is_none();
+                let gain = self.seq_score(&seq, ctx) - orig - confusion::switch_penalty(&lower, alt) - if one_sided { 2.0 } else { 0.0 };
                 if gain > 0.0 && best.map_or(true, |b| gain > b.1) {
                     best = Some((alt, gain));
                 }

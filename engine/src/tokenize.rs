@@ -210,7 +210,9 @@ fn mark_sentences(toks: &mut [Token]) {
                     };
                     // "..." ellipsis: only a sentence break if followed by a capital, handled by next word check below
                     let next_is_dot = toks.get(idx + 1).map_or(false, |t| t.text == ".");
-                    if !is_abbrev && !next_is_dot {
+                    let prev_is_dot = idx > 0 && toks[idx - 1].text == ".";
+                    // An ellipsis ("...", "…") trails off; the next word need not be capitalized.
+                    if !is_abbrev && !next_is_dot && !prev_is_dot && p != "\u{2026}" {
                         at_start = true;
                     }
                 } else if p == ":" {

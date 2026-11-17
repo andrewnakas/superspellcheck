@@ -21,6 +21,8 @@ pub struct LanguageModel {
     pub suggestible: Vec<bool>,
     pub case: Vec<CaseInfo>,
     bigrams: HashMap<u64, f64>,
+    /// Valid regional spellings (British/Canadian) that are accepted but not suggested.
+    variants: std::collections::HashSet<String>,
     total: f64,
     floor_count: f64,
 }
@@ -46,6 +48,7 @@ impl LanguageModel {
             suggestible: Vec::new(),
             case: Vec::new(),
             bigrams: HashMap::new(),
+            variants: Default::default(),
             total: 0.0,
             floor_count: 1.0,
         };
@@ -95,6 +98,12 @@ impl LanguageModel {
             *lm.bigrams.entry(pair_key(ia, ib)).or_insert(0.0) += c;
         }
         lm
+    }
+
+    pub fn add_variants(&mut self, list: &str) {
+        for w in list.lines().map(str::trim).filter(|w| !w.is_empty()) {
+            self.variants.insert(normalize_apostrophes(w).to_lowercase());
+        }
     }
 
     fn intern(&mut self, w: &str) -> u32 {
@@ -158,6 +167,9 @@ impl LanguageModel {
     pub fn classify(&self, word: &str) -> WordStatus {
         let w = normalize_apostrophes(word);
         let lower = w.to_lowercase();
+        if self.variants.contains(&lower) {
+            return WordStatus::Valid;
+        }
         if let Some(id) = self.id(&lower) {
             let ci = &self.case[id as usize];
             if self.suggestible[id as usize] {
@@ -172,8 +184,11 @@ impl LanguageModel {
                     return WordStatus::Valid;
                 }
                 // Title-case input for a cased lexicon entry like "Mcdonald" vs "McDonald": accept first-letter matches.
-                if let Some(c) = ci.cased.first() {
-                    return WordStatus::WrongCase(c.clone());
+                if let Some(c) = ci.cased.iter().find(|c| c.chars().skip(1).any(|x| x.is_lowercase())) {
+                    if c.chars().count() > 3 {
+                        return WordStatus::WrongCase(c.clone());
+                    }
+                    return WordStatus::Valid; // "mon", "jan": too ambiguous to nag about
                 }
             }
         }

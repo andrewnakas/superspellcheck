@@ -111,7 +111,9 @@ pub fn weighted_distance(typed: &str, intended: &str) -> f32 {
                 .min(d[i][j - 1] + del_cost(&w, j - 1))
                 .min(d[i - 1][j - 1] + sub_cost(t[i - 1], w[j - 1]));
             if i > 1 && j > 1 && t[i - 1] == w[j - 2] && t[i - 2] == w[j - 1] && t[i - 1] != t[i - 2] {
-                v = v.min(d[i - 2][j - 2] + 0.55);
+                // "ie"/"ei" swaps are the classic English spelling confusion
+                let ie = matches!((t[i - 2], t[i - 1]), ('i', 'e') | ('e', 'i'));
+                v = v.min(d[i - 2][j - 2] + if ie { 0.3 } else { 0.55 });
             }
             // two-for-one phonetic substitutions: "f" for "ph", "k" for "ck", "s" for "ss"/"sc"
             if j > 1 && i >= 1 {
@@ -127,12 +129,16 @@ pub fn weighted_distance(typed: &str, intended: &str) -> f32 {
     }
     let mut cost = d[n][m];
     // People rarely get the first letter wrong.
+    let (kt, kw) = (sound_key(typed), sound_key(intended));
     if let (Some(a), Some(b)) = (t.first(), w.first()) {
         if a != b && !(a.to_lowercase().eq(b.to_lowercase())) {
-            cost += 0.45;
+            // Unless it sounds the same ("fone"/"phone", "kat"/"cat"), or is a vowel slip.
+            if kt.chars().next() != kw.chars().next() {
+                cost += if is_vowel(*a) && is_vowel(*b) { 0.2 } else { 0.45 };
+            }
         }
     }
-    if cost > 0.0 && sound_key(typed) == sound_key(intended) {
+    if cost > 0.0 && kt == kw {
         cost *= 0.7;
     }
     cost
@@ -142,6 +148,10 @@ pub fn weighted_distance(typed: &str, intended: &str) -> f32 {
 pub fn sound_key(word: &str) -> String {
     let w = word.to_lowercase().replace('\'', "");
     let mut s = w
+        .replace("ssion", "shn")
+        .replace("tion", "shn")
+        .replace("sion", "shn")
+        .replace("cion", "shn")
         .replace("ph", "f")
         .replace("gh", "")
         .replace("ck", "k")
