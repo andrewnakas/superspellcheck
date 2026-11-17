@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release
+      - run: cargo build --release
+      - name: Benchmark (quick) vs Hunspell and Aspell
+        run: |
+          sudo apt-get update && sudo apt-get install -y hunspell hunspell-en-us aspell aspell-en
+          bench/fetch.sh
+          python3 bench/run.py --quick --json bench-results.json
+          python3 bench/check_regression.py bench-results.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench-results.json
+
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo install wasm-pack --locked
+      - working-directory: extension
+        run: |
+          npm ci
+          npm run wasm
+          npm run typecheck
+          npm run build
+          npx playwright@1.49.1 install --with-deps chromium
+          npm i --no-save playwright@1.49.1
+          npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-builds
+          path: extension/dist

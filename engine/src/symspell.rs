@@ -47,14 +47,28 @@ fn deletes(word: &[char], max: usize, out: &mut Vec<Vec<char>>) {
 
 impl SymSpell {
     pub fn build<'a>(words: impl Iterator<Item = (u32, &'a str)>) -> Self {
-        let mut entries = Vec::new();
-        let mut buf = Vec::new();
+        let mut entries = Vec::with_capacity(4_000_000);
+        let mut chars: Vec<char> = Vec::with_capacity(PREFIX);
+        let mut buf: Vec<char> = Vec::with_capacity(PREFIX);
         for (id, w) in words {
-            let chars: Vec<char> = w.chars().take(PREFIX).collect();
-            buf.clear();
-            deletes(&chars, MAX_DIST, &mut buf);
-            for d in &buf {
-                entries.push((hash(d), id));
+            chars.clear();
+            chars.extend(w.chars().take(PREFIX));
+            let n = chars.len();
+            entries.push((hash(&chars), id));
+            // all single and double deletes, hashed without allocating (duplicates removed by sort+dedup)
+            for i in 0..n {
+                if n > 1 {
+                    buf.clear();
+                    buf.extend(chars.iter().enumerate().filter(|(k, _)| *k != i).map(|(_, c)| *c));
+                    entries.push((hash(&buf), id));
+                }
+                if n > 2 {
+                    for j in i + 1..n {
+                        buf.clear();
+                        buf.extend(chars.iter().enumerate().filter(|(k, _)| *k != i && *k != j).map(|(_, c)| *c));
+                        entries.push((hash(&buf), id));
+                    }
+                }
             }
         }
         entries.sort_unstable();
