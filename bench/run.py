@@ -121,9 +121,10 @@ def task_word(quick):
     results = {}
     for corpus in CORPORA:
         pairs = load_pairs(corpus)
-        if quick and len(pairs) > 2000:
+        cap = 2000 if quick else 6000  # Hunspell suggestion generation is slow (~10ms/word)
+        if len(pairs) > cap:
             random.Random(1).shuffle(pairs)
-            pairs = pairs[:2000]
+            pairs = pairs[:cap]
         words = [w for w, _ in pairs]
         row = {"n": len(pairs)}
         for sys_name in SYSTEMS:

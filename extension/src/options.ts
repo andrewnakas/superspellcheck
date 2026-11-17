@@ -1,4 +1,4 @@
-import { getDictionary, getSettings, saveSettings, setDictionary } from './storage';
+import { api, getApiKey, getDictionary, getSettings, saveSettings, setApiKey, setDictionary } from './storage';
 
 const RULES: Array<[string, string]> = [
   ['SPELLING', 'Spelling'],
@@ -57,6 +57,10 @@ async function render() {
     }),
   );
 
+  $<HTMLInputElement>('deep').checked = s.deepCheck;
+  $<HTMLInputElement>('apikey').value = await getApiKey();
+  $<HTMLInputElement>('apibase').value = s.apiBase;
+
   const dict = await getDictionary();
   $('dict').replaceChildren(...dict.map((w) => chip(w, async () => { await setDictionary(dict.filter((x) => x !== w)); render(); })));
   $('sites').replaceChildren(...s.disabledSites.map((h) => chip(h, async () => { await saveSettings({ disabledSites: s.disabledSites.filter((x) => x !== h) }); render(); })));
@@ -71,8 +75,96 @@ $<HTMLFormElement>('addform').addEventListener('submit', async (e) => {
   if (input.value.trim()) {
     await setDictionary([...(await getDictionary()), input.value.trim()]);
     input.value = '';
-    render();
+    /** Custom servers need a host permission granted from a user gesture. */
+async function ensureOrigin(base: string): Promise<boolean> {
+  try {
+    const origin = new URL(base).origin + '/*';
+    return await api.permissions.request({ origins: [origin] });
+  } catch {
+    return false;
+  }
+}
+
+async function testConnection() {
+  const status = $('deepstatus');
+  const s = await getSettings();
+  const key = await getApiKey();
+  if (!s.deepCheck) return void (status.textContent = '');
+  if (!key) return void (status.textContent = 'Add your API key to turn on deep check.');
+  try {
+    const res = await fetch(`${s.apiBase.replace(/\/$/, '')}/v1/health`, { headers: { authorization: `Bearer ${key}` } });
+    status.textContent = res.ok ? 'Connected.' : res.status === 401 ? 'That API key was not accepted.' : `Server error (${res.status}).`;
+  } catch {
+    status.textContent = 'Could not reach the server.';
+  }
+}
+
+$<HTMLInputElement>('deep').addEventListener('change', async (e) => {
+  const on = (e.target as HTMLInputElement).checked;
+  if (on && !(await ensureOrigin((await getSettings()).apiBase))) {
+    (e.target as HTMLInputElement).checked = false;
+    return;
+  }
+  await saveSettings({ deepCheck: on });
+  testConnection();
+});
+$<HTMLInputElement>('apikey').addEventListener('change', async (e) => {
+  await setApiKey((e.target as HTMLInputElement).value);
+  testConnection();
+});
+$<HTMLInputElement>('apibase').addEventListener('change', async (e) => {
+  const v = (e.target as HTMLInputElement).value.trim();
+  if (await ensureOrigin(v)) await saveSettings({ apiBase: v });
+  else (e.target as HTMLInputElement).value = (await getSettings()).apiBase;
+  testConnection();
+});
+
+render().then(testConnection);
   }
 });
 
-render();
+/** Custom servers need a host permission granted from a user gesture. */
+async function ensureOrigin(base: string): Promise<boolean> {
+  try {
+    const origin = new URL(base).origin + '/*';
+    return await api.permissions.request({ origins: [origin] });
+  } catch {
+    return false;
+  }
+}
+
+async function testConnection() {
+  const status = $('deepstatus');
+  const s = await getSettings();
+  const key = await getApiKey();
+  if (!s.deepCheck) return void (status.textContent = '');
+  if (!key) return void (status.textContent = 'Add your API key to turn on deep check.');
+  try {
+    const res = await fetch(`${s.apiBase.replace(/\/$/, '')}/v1/health`, { headers: { authorization: `Bearer ${key}` } });
+    status.textContent = res.ok ? 'Connected.' : res.status === 401 ? 'That API key was not accepted.' : `Server error (${res.status}).`;
+  } catch {
+    status.textContent = 'Could not reach the server.';
+  }
+}
+
+$<HTMLInputElement>('deep').addEventListener('change', async (e) => {
+  const on = (e.target as HTMLInputElement).checked;
+  if (on && !(await ensureOrigin((await getSettings()).apiBase))) {
+    (e.target as HTMLInputElement).checked = false;
+    return;
+  }
+  await saveSettings({ deepCheck: on });
+  testConnection();
+});
+$<HTMLInputElement>('apikey').addEventListener('change', async (e) => {
+  await setApiKey((e.target as HTMLInputElement).value);
+  testConnection();
+});
+$<HTMLInputElement>('apibase').addEventListener('change', async (e) => {
+  const v = (e.target as HTMLInputElement).value.trim();
+  if (await ensureOrigin(v)) await saveSettings({ apiBase: v });
+  else (e.target as HTMLInputElement).value = (await getSettings()).apiBase;
+  testConnection();
+});
+
+render().then(testConnection);

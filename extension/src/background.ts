@@ -1,7 +1,7 @@
 // Background (service worker on Chrome, event page on Firefox/Safari).
 // Hosts the WASM engine once for all tabs; content scripts ask it to check text.
 import init, { WasmEngine } from '../pkg/ssc_engine.js';
-import { api, getDictionary, getSettings, setDictionary } from './storage';
+import { api, getApiKey, getDictionary, getSettings, setDictionary } from './storage';
 import type { CheckResponse, Issue, Request, Settings } from './types';
 
 let enginePromise: Promise<WasmEngine> | null = null;
@@ -67,6 +67,40 @@ async function check(text: string): Promise<Issue[]> {
   return out;
 }
 
+// ---- Pro: AI deep check. Only runs when the user turned it on and has a key.
+const deepCache = new Map<string, Issue[]>();
+const MIN_WORDS = 4;
+
+async function deepCheckParagraph(para: string, base: string, key: string): Promise<Issue[]> {
+  const hit = deepCache.get(para);
+  if (hit) return hit;
+  const res = await fetch(`${base.replace(/\/$/, '')}/v1/check`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    body: JSON.stringify({ text: para }),
+  });
+  if (!res.ok) throw new Error(`deep check failed: ${res.status}`);
+  const issues = ((await res.json()).issues ?? []) as Issue[];
+  if (deepCache.size >= CACHE_MAX) deepCache.delete(deepCache.keys().next().value as string);
+  deepCache.set(para, issues);
+  return issues;
+}
+
+async function deepCheck(text: string): Promise<Issue[]> {
+  const [settings, key] = await Promise.all([getSettings(), getApiKey()]);
+  if (!settings.deepCheck || !key) return [];
+  const jobs: Array<Promise<Issue[]>> = [];
+  const re = /[^\n]+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const para = m[0];
+    const index = m.index;
+    if (para.trim().split(/\s+/).length < MIN_WORDS) continue;
+    jobs.push(deepCheckParagraph(para, settings.apiBase, key).then((is) => is.map((i) => ({ ...i, offset: i.offset + index }))));
+  }
+  return (await Promise.all(jobs)).flat();
+}
+
 async function handle(msg: Request): Promise<unknown> {
   switch (msg.type) {
     case 'check': {
@@ -74,6 +108,14 @@ async function handle(msg: Request): Promise<unknown> {
       try {
         const issues = await check(msg.text);
         return { issues, ms: performance.now() - t0 } satisfies CheckResponse;
+      } catch (err) {
+        return { error: String(err) } satisfies CheckResponse;
+      }
+    }
+    case 'deepCheck': {
+      const t0 = performance.now();
+      try {
+        return { issues: await deepCheck(msg.text), ms: performance.now() - t0 } satisfies CheckResponse;
       } catch (err) {
         return { error: String(err) } satisfies CheckResponse;
       }

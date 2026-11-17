@@ -24,3 +24,13 @@ export async function setDictionary(words: string[]): Promise<void> {
   const unique = [...new Set(words.map((w) => w.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   await api.storage.sync.set({ dictionary: unique });
 }
+
+/** The Pro API key stays in local storage: it is a secret, so it is not synced. */
+export async function getApiKey(): Promise<string> {
+  const s = await api.storage.local.get('apiKey');
+  return s.apiKey ?? '';
+}
+
+export async function setApiKey(key: string): Promise<void> {
+  await api.storage.local.set({ apiKey: key.trim() });
+}

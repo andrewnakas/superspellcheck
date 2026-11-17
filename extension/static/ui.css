@@ -20,3 +20,6 @@ form button { padding: 6px 12px; border: 0; border-radius: 6px; background: var(
 body.popup { width: 300px; padding: 14px 16px; }
 body.popup h1 { font-size: 16px; margin-bottom: 8px; }
 a { color: var(--accent); }
+.badge { font-size: 11px; font-weight: 600; background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 6px; vertical-align: middle; }
+input[type=password], input[type=url] { flex: 1; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; font: inherit; }
+details summary { cursor: pointer; color: var(--muted); margin: 6px 0; }

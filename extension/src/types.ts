@@ -19,6 +19,9 @@ export interface Settings {
   disabledRules: string[];
   /** Turn off the browser's own spellcheck in fields we handle, to avoid double underlines. */
   replaceNativeSpellcheck: boolean;
+  /** Pro: also send paragraphs to the cloud API for an AI deep check. Off unless the user opts in. */
+  deepCheck: boolean;
+  apiBase: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -27,10 +30,13 @@ export const DEFAULT_SETTINGS: Settings = {
   disabledSites: [],
   disabledRules: [],
   replaceNativeSpellcheck: true,
+  deepCheck: false,
+  apiBase: 'https://api.superspellcheck.app',
 };
 
 export type Request =
   | { type: 'check'; text: string }
+  | { type: 'deepCheck'; text: string }
   | { type: 'addWord'; word: string }
   | { type: 'removeWord'; word: string }
   | { type: 'getSettings' }

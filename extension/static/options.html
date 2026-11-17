@@ -29,6 +29,17 @@
   </section>
 
   <section>
+    <h2>AI deep check <span class="badge">Pro</span></h2>
+    <p class="hint">Catches subtler grammar and clarity problems. When this is on, paragraphs you type are sent over an encrypted connection to the SuperSpellCheck server for checking. They are not stored.</p>
+    <label class="row"><input type="checkbox" id="deep"> Use AI deep check</label>
+    <label class="row">API key <input id="apikey" type="password" autocomplete="off" placeholder="ssc_..."></label>
+    <details><summary>Advanced</summary>
+      <label class="row">Server <input id="apibase" type="url"></label>
+    </details>
+    <p id="deepstatus" class="hint" role="status"></p>
+  </section>
+
+  <section>
     <h2>Personal dictionary</h2>
     <form id="addform" class="row"><input id="newword" placeholder="Add a word" autocomplete="off"><button>Add</button></form>
     <ul id="dict" class="list"></ul>

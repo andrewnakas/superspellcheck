@@ -18,6 +18,8 @@ const base = {
   action: { default_popup: 'popup.html', default_icon: { 16: 'icons/16.png', 32: 'icons/32.png' } },
   options_ui: { page: 'options.html', open_in_tab: true },
   permissions: ['storage', 'activeTab'],
+  // AI deep check is opt-in; the host permission is requested when the user turns it on.
+  optional_host_permissions: ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'],
   content_scripts: [{ matches: ['<all_urls>'], js: ['content.js'], run_at: 'document_idle', all_frames: true, match_about_blank: true }],
   content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
 };

@@ -126,6 +126,24 @@ class Controller {
     }
     this.issues = res.issues.filter((i) => !ignored.has(`${i.rule}|${i.text}`));
     this.render();
+    if (settings?.deepCheck) this.deepCheck(text, id);
+  }
+
+  /** Pro: merge AI findings that don't overlap what the local engine already found. */
+  private async deepCheck(text: string, id: number) {
+    let res: CheckResponse;
+    try {
+      res = await api.runtime.sendMessage({ type: 'deepCheck', text });
+    } catch {
+      return;
+    }
+    if (id !== this.seq || this.surface.getText() !== text || 'error' in res) return;
+    const extra = res.issues.filter(
+      (a) => !ignored.has(`${a.rule}|${a.text}`) && !this.issues.some((l) => a.offset < l.offset + l.length && l.offset < a.offset + a.length),
+    );
+    if (!extra.length) return;
+    this.issues = [...this.issues, ...extra].sort((a, b) => a.offset - b.offset);
+    this.render();
   }
 
   private clearUnderlines() {

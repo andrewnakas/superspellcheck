@@ -134,6 +134,40 @@ try {
     assert.equal(u.length, 0);
   });
 
+  await step('Pro deep check merges AI findings from the API', async () => {
+    let seenAuth = '';
+    const apiServer = http.createServer((req, res) => {
+      res.setHeader('access-control-allow-origin', '*');
+      res.setHeader('access-control-allow-headers', 'authorization, content-type');
+      if (req.method === 'OPTIONS') return res.end();
+      let body = '';
+      req.on('data', (d) => (body += d));
+      req.on('end', () => {
+        seenAuth = req.headers.authorization ?? '';
+        const { text } = JSON.parse(body || '{}');
+        const i = text.indexOf('much');
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ issues: i < 0 ? [] : [{ offset: i, length: 4, text: 'much', category: 'grammar', rule: 'AI_GRAMMAR', message: 'Use "many" with countable nouns.', replacements: ['many'], confidence: 0.8 }] }));
+      });
+    }).listen(0);
+    const base = `http://127.0.0.1:${apiServer.address().port}`;
+    await sw.evaluate(async (base) => {
+      const s = (await chrome.storage.sync.get('settings')).settings ?? {};
+      await chrome.storage.sync.set({ settings: { ...s, deepCheck: true, apiBase: base } });
+      await chrome.storage.local.set({ apiKey: 'test-key' });
+    }, base);
+    await page.fill('#ta', '');
+    await page.click('#ta');
+    await page.keyboard.type('There were too much people at the party.');
+    await page.waitForFunction(() => [...(document.querySelector('ssc-overlay')?.shadowRoot?.querySelectorAll('.u') ?? [])].some((u) => u.dataset.rule === 'AI_GRAMMAR'), null, { timeout: 10000 });
+    assert.equal(seenAuth, 'Bearer test-key');
+    await sw.evaluate(async () => {
+      const s = (await chrome.storage.sync.get('settings')).settings;
+      await chrome.storage.sync.set({ settings: { ...s, deepCheck: false } });
+    });
+    apiServer.close();
+  });
+
   await step('check latency is interactive', async () => {
     const ms = await sw.evaluate(async () => {
       const t0 = performance.now();
